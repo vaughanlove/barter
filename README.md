@@ -1,5 +1,7 @@
 # barter
 
+> **New session? Start with [ideation/HANDOFF.md](ideation/HANDOFF.md)** — current state, live URLs, next tasks, and gotchas.
+
 ## Layout
 
 - `ideation/prototype/` — landing page (`/`), `/llms.txt`, and the session control panel (`/panel`).
