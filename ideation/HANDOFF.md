@@ -103,7 +103,20 @@ OTEL logs appearing in the landing control panel (`/api/sessions`).
    platform landing is currently also on GitHub Pages — reconcile which
    landing is canonical before instrumenting. Keep it trivial (counters +
    panel), no analytics stack.
-4. **Unique domain (voice-dictation problem).** `vaughan` mis-transcribes
+4. **Vendor discount-policy knobs (the company side).** Show that vendors
+   configure *how* they negotiate, not just a hidden floor. Today
+   `vendor/src/discount_policy.ts` only has floor + undercut (env:
+   `VENDOR_FLOOR`, `VENDOR_UNDERCUT`). Extend the policy model per vendor
+   instance, e.g.: total % discount allowed per deal (and/or per period),
+   number of coupons the vendor is willing to issue (count + codes, issued
+   as an alternative/complement to price cuts), lowest breakeven cost
+   (hard floor derived from cost, distinct from the asking-price band),
+   max concession per round / max rounds, and proof threshold (minimum
+   verified gap before any concession). Surface the *shape* in the vendor's
+   public profile (e.g. "up to 15% with verified proof, coupons available")
+   while keeping exact floors/costs private. Wire each knob to env per
+   Railway vendor service so the two dummies negotiate visibly differently.
+5. **Unique domain (voice-dictation problem).** `vaughan` mis-transcribes
    when voice-dictated, so a unique domain is probably needed after all.
    Leading candidate: **provablybarter.com** ("Barter, provably.") with
    barterproof.com as the mishearing redirect. Availability/trademark NOT
