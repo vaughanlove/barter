@@ -24,6 +24,8 @@ const vendorApi = {
 
 export default defineConfig({
   plugins: [vendorApi],
+  // Deployed behind Railway: accept the platform healthcheck / public hosts.
+  preview: { allowedHosts: true },
   fmt: {},
   lint: {
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
