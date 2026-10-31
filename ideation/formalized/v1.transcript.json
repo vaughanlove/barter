@@ -1,0 +1,136 @@
+{
+  "title": "",
+  "participants": [
+    {
+      "id": "user",
+      "label": "User",
+      "kind": "actor"
+    },
+    {
+      "id": "muse",
+      "label": "MUSE",
+      "kind": "participant"
+    },
+    {
+      "id": "vendor_site",
+      "label": "VENDOR SITE",
+      "kind": "participant"
+    },
+    {
+      "id": "notary",
+      "label": "NOTARY",
+      "kind": "participant"
+    },
+    {
+      "id": "vendor_agent",
+      "label": "VENDOR AGENT",
+      "kind": "participant"
+    }
+  ],
+  "messages": [
+    {
+      "n": 1,
+      "from": "user",
+      "to": "muse",
+      "label": "req. product",
+      "style": "solid",
+      "note": "req. = request"
+    },
+    {
+      "n": 2,
+      "from": "muse",
+      "to": "vendor_site",
+      "label": "search",
+      "style": "solid",
+      "note": ""
+    },
+    {
+      "n": 3,
+      "from": "vendor_site",
+      "to": "notary",
+      "label": "lowest ? offer. gen. proof",
+      "style": "dashed",
+      "note": "gen. = generate"
+    },
+    {
+      "n": 4,
+      "from": "notary",
+      "to": "muse",
+      "label": "",
+      "style": "solid",
+      "note": "Unlabeled return/response: long horizontal line with arrowhead"
+    },
+    {
+      "n": 5,
+      "from": "muse",
+      "to": "vendor_agent",
+      "label": "barter w/ proof as lev.",
+      "style": "solid",
+      "note": "w/ = with; lev. = leverage"
+    },
+    {
+      "n": 6,
+      "from": "vendor_agent",
+      "to": "muse",
+      "label": "new offer",
+      "style": "solid",
+      "note": ""
+    },
+    {
+      "n": 7,
+      "from": "muse",
+      "to": "notary",
+      "label": "lowest ?",
+      "style": "solid",
+      "note": ""
+    },
+    {
+      "n": 8,
+      "from": "notary",
+      "to": "muse",
+      "label": "",
+      "style": "solid",
+      "note": "Unlabeled return/response: long horizontal line with arrowhead"
+    },
+    {
+      "n": 9,
+      "from": "muse",
+      "to": "vendor_site",
+      "label": "repeat",
+      "style": "dashed",
+      "note": "Shown as -- repeat -- indicating loop"
+    },
+    {
+      "n": 10,
+      "from": "muse",
+      "to": "user",
+      "label": "best offer",
+      "style": "solid",
+      "note": ""
+    },
+    {
+      "n": 11,
+      "from": "user",
+      "to": "muse",
+      "label": "approve",
+      "style": "solid",
+      "note": ""
+    },
+    {
+      "n": 12,
+      "from": "muse",
+      "to": "vendor_site",
+      "label": "purchase",
+      "style": "solid",
+      "note": ""
+    },
+    {
+      "n": 13,
+      "from": "vendor_site",
+      "to": "user",
+      "label": "",
+      "style": "solid",
+      "note": "Unlabeled return/response: long horizontal line with arrowhead"
+    }
+  ]
+}

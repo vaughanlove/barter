@@ -1,0 +1,27 @@
+[package]
+name = "tlsn-sidecar"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.8", features = ["macros"] }
+base64 = "0.22"
+bincode = "1"
+futures = "0.3"
+getrandom = "0.3"
+hex = "0.4"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["full"] }
+k256 = { version = "0.13", features = ["ecdsa"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tlsn = { git = "https://github.com/tlsnotary/tlsn", rev = "24b10ba21bf36c3fd3de709e7eccd8308bb64207", features = ["mozilla-certs"] }
+tlsn-formats = { git = "https://github.com/tlsnotary/tlsn", rev = "24b10ba21bf36c3fd3de709e7eccd8308bb64207" }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+
+[profile.release]
+opt-level = 3

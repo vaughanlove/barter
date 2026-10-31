@@ -1,0 +1,185 @@
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
+
+// The test servers are loopback-only; make sure a proxy configured for
+// external traffic in the developer environment does not intercept them.
+process.env.NO_PROXY = [process.env.NO_PROXY, "127.0.0.1,localhost"].filter(Boolean).join(",");
+process.env.no_proxy = process.env.NO_PROXY;
+
+let apiServer: Server;
+let verifierServer: Server;
+let baseUrl: string;
+let handleApi: typeof import("./api.ts").handleApi;
+
+function listen(server: Server): Promise<number> {
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port));
+  });
+}
+
+function close(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+}
+
+async function postJson(
+  path: string,
+  body: unknown,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+}
+
+async function createConversation(): Promise<string> {
+  const created = await postJson("/poppy/conversations", {});
+  expect(created.status).toBe(201);
+  expect(created.body.quote).toMatchObject({ price: 76, currency: "USD" });
+  return String(created.body.id);
+}
+
+async function barter(id: string, presentationB64?: string) {
+  return postJson(`/poppy/conversations/${id}/messages`, {
+    type: "barter",
+    data: presentationB64 ? { presentationB64 } : {},
+  });
+}
+
+async function events(id: string): Promise<string[]> {
+  const response = await fetch(`${baseUrl}/poppy/conversations/${id}/events`);
+  const body = (await response.json()) as { events: { event: string }[] };
+  return body.events.map((event) => event.event);
+}
+
+beforeAll(async () => {
+  verifierServer = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk) => chunks.push(chunk as Buffer));
+    req.on("end", () => {
+      const { presentationB64 } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as {
+        presentationB64?: string;
+      };
+      const send = (body: unknown) => {
+        if (!res.destroyed) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(body));
+        }
+      };
+      if (presentationB64 === "valid-low") {
+        send({ valid: true, received: 'HTTP/1.1 200 OK\r\n\r\n{"price": 65}' });
+      } else if (presentationB64 === "valid-floor") {
+        send({ valid: true, received: 'HTTP/1.1 200 OK\r\n\r\n{"price": 10}' });
+      } else if (presentationB64 === "slow") {
+        res.on("error", () => undefined);
+        setTimeout(() => send({ valid: true, received: '{"price": 1}' }), 300);
+      } else {
+        send({ valid: false });
+      }
+    });
+  });
+  const verifierPort = await listen(verifierServer);
+
+  process.env.VENDOR_NAME = "Test Vendor";
+  process.env.VENDOR_PRICE = "76";
+  process.env.VENDOR_FLOOR = "60";
+  process.env.VENDOR_UNDERCUT = "3";
+  process.env.VERIFIER_URL = `http://127.0.0.1:${verifierPort}/verify`;
+  process.env.VERIFIER_TIMEOUT_MS = "50";
+
+  ({ handleApi } = await import("./api.ts"));
+  apiServer = createServer((req, res) => {
+    void handleApi(req, res).then((handled) => {
+      if (!handled) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "not found" }));
+      }
+    });
+  });
+  const apiPort = await listen(apiServer);
+  baseUrl = `http://127.0.0.1:${apiPort}`;
+});
+
+afterAll(async () => {
+  await close(apiServer);
+  await close(verifierServer);
+});
+
+describe("discovery", () => {
+  it("serves per-instance poppy.json matching the serving host", async () => {
+    const response = await fetch(`${baseUrl}/.well-known/poppy.json`);
+    const body = (await response.json()) as Record<string, unknown>;
+    const host = new URL(baseUrl).host;
+    expect(body.protocol_version).toBe("0.3");
+    expect(body.organization).toMatchObject({ domain: host });
+    const agent = body.agent as { protocols: { endpoint: string }[] };
+    expect(agent.protocols[0].endpoint).toBe(`http://${host}/poppy/conversations`);
+  });
+});
+
+describe("proof-gated barter", () => {
+  it("rejects barter without a presentation and keeps the quote", async () => {
+    const id = await createConversation();
+
+    const result = await barter(id);
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      type: "rejected",
+      data: { price: 76, reason: "proof required to barter" },
+    });
+    expect(await events(id)).toContain("vendor.proof.rejected");
+  });
+
+  it("rejects an invalid presentation", async () => {
+    const id = await createConversation();
+
+    const result = await barter(id, "not-a-presentation");
+
+    expect(result.body).toMatchObject({
+      type: "rejected",
+      data: { price: 76, reason: "proof did not verify" },
+    });
+    expect(await events(id)).toEqual(
+      expect.arrayContaining(["vendor.proof.received", "vendor.proof.rejected"]),
+    );
+  });
+
+  it("rejects when the verifier exceeds the configured timeout", async () => {
+    const id = await createConversation();
+    const started = Date.now();
+
+    const result = await barter(id, "slow");
+
+    expect(Date.now() - started).toBeLessThan(250);
+    expect(result.body).toMatchObject({
+      type: "rejected",
+      data: { price: 76, reason: "proof did not verify" },
+    });
+  });
+
+  it("concedes only after a verified lower price and stops at the floor", async () => {
+    const id = await createConversation();
+
+    const conceded = await barter(id, "valid-low");
+    expect(conceded.body).toMatchObject({
+      type: "offer",
+      data: { price: 62, floorReached: false },
+    });
+
+    const floored = await barter(id, "valid-floor");
+    expect(floored.body).toMatchObject({
+      type: "offer",
+      data: { price: 60, floorReached: true },
+    });
+    expect(await events(id)).toEqual(
+      expect.arrayContaining([
+        "vendor.proof.verified",
+        "vendor.offer.countered",
+        "vendor.offer.floor",
+      ]),
+    );
+  });
+});

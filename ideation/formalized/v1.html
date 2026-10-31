@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Barter protocol — v1</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: ui-sans-system, system-ui, "Segoe UI", Roboto, sans-serif; background: #f4f6fb; color: #16233f; }
+  header { padding: 28px 32px 8px; max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  p.sub { margin: 0; color: #5a6b8c; font-size: 14px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 32px 40px; }
+  .card { background: #fff; border: 1px solid #dde4f2; border-radius: 14px; padding: 28px; box-shadow: 0 8px 30px rgba(22,35,63,.06); overflow-x: auto; }
+  .mermaid { display: flex; justify-content: center; }
+  footer { max-width: 1200px; margin: 0 auto; padding: 0 32px 28px; color: #8494b3; font-size: 12.5px; }
+  code { background: #eef2fa; padding: 1px 5px; border-radius: 5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Barter protocol — v1</h1>
+  <p class="sub">Formalized from <code>ideation/handdrawn/v0.png</code> by <code>ideation/formalize.mjs</code> (Meta AI agent pipeline). Source: <code>v1.mmd</code> · Spec: <code>v1.md</code></p>
+</header>
+<main><div class="card"><pre class="mermaid">
+sequenceDiagram
+    actor User
+    participant MUSE as MUSE (Buyer Agent)
+    participant VSITE as VENDOR SITE
+    participant NOTARY as NOTARY
+    participant VAGENT as VENDOR AGENT
+
+    User->>MUSE: 1. Request product
+    MUSE->>VSITE: 2. Search
+    VSITE-->>NOTARY: 3. Lowest offer? Generate proof
+    NOTARY-->>MUSE: 4. Signed proof (attestation)
+
+    Note over MUSE,NOTARY: Proof of the lowest observed offer becomes bargaining leverage
+
+    loop Barter rounds
+        MUSE->>VAGENT: 5. Barter with proof as leverage
+        VAGENT-->>MUSE: 6. New offer
+        MUSE->>NOTARY: 7. Still the lowest?
+        NOTARY-->>MUSE: 8. Verified / updated proof
+        MUSE->>VSITE: 9. Repeat — search again
+    end
+
+    MUSE-->>User: 10. Best offer
+    User->>MUSE: 11. Approve
+    MUSE->>VSITE: 12. Purchase
+    VSITE-->>User: 13. Confirmation / delivery
+</pre></div></main>
+<footer>Regenerate: <code>node ideation/formalize.mjs</code> — requires MODEL_API_KEY in .env. Renders with Mermaid.js from CDN; the .mmd source also renders natively on GitHub.</footer>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "base", themeVariables: {
+    primaryColor: "#eaf0ff", primaryBorderColor: "#3b5bdb", primaryTextColor: "#16233f",
+    lineColor: "#3b5bdb", secondaryColor: "#fff4e0", actorBkg: "#eaf0ff", actorBorder: "#3b5bdb",
+    noteBkgColor: "#fff4e0", noteBorderColor: "#e8a33d", fontFamily: "ui-sans-system, system-ui, sans-serif"
+  }, sequence: { mirrorActors: false, messageAlign: "center" } });
+</script>
+</body>
+</html>

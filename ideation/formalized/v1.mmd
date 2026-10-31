@@ -1,0 +1,26 @@
+sequenceDiagram
+    actor User
+    participant MUSE as MUSE (Buyer Agent)
+    participant VSITE as VENDOR SITE
+    participant NOTARY as NOTARY
+    participant VAGENT as VENDOR AGENT
+
+    User->>MUSE: 1. Request product
+    MUSE->>VSITE: 2. Search
+    VSITE-->>NOTARY: 3. Lowest offer? Generate proof
+    NOTARY-->>MUSE: 4. Signed proof (attestation)
+
+    Note over MUSE,NOTARY: Proof of the lowest observed offer becomes bargaining leverage
+
+    loop Barter rounds
+        MUSE->>VAGENT: 5. Barter with proof as leverage
+        VAGENT-->>MUSE: 6. New offer
+        MUSE->>NOTARY: 7. Still the lowest?
+        NOTARY-->>MUSE: 8. Verified / updated proof
+        MUSE->>VSITE: 9. Repeat — search again
+    end
+
+    MUSE-->>User: 10. Best offer
+    User->>MUSE: 11. Approve
+    MUSE->>VSITE: 12. Purchase
+    VSITE-->>User: 13. Confirmation / delivery
