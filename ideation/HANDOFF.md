@@ -19,9 +19,10 @@ vaughan.love outright; old domains deleted from Railway). Config applied,
 all four domains ACTIVE with valid certs, deployments SUCCESS, and
 endpoints verified live:
 
-- https://barter.computer — landing page (free-text product form ->
-  persisted session), `/llms.txt` (two vendors, proof-anchored mirror
-  flow), `/panel` (control
+- https://barter.computer — landing page (no form: the Muse agent is
+  the entrypoint and creates the persisted session; homepage follows a
+  session by ID + lists recent sessions), `/llms.txt` (session creation,
+  two vendors, proof-anchored mirror flow), `/panel` (control
   panel, light mode, per-session OTEL log viewer). `/llms.txt` teaches the
   protocol; a user verbally tells Muse "go to barter.computer".
 - https://prove.barter.computer — TLSNotary sidecar. `/health`, `/pubkey`

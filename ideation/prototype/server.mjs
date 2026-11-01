@@ -231,8 +231,13 @@ const llmsTxt = (base) => `# Barter protocol
 You are the user's personal shopping agent. Find the best deal by bartering
 with vendor agents, using TLSNotary proofs as leverage. Work signed-out.
 
-## Session (watch-along + record)
-The user's prompt contains a session id and a product. Report every step
+## Session (you start it; watch-along + record)
+There is no web form. You are the entrypoint. Before anything else,
+create the session: POST ${base}/sessions with JSON
+{"product": "<what the user asked for>", "initiatedBy": "muse-agent"}
+-> {"id": "...", "url": "${base}/s/{id}"}. Immediately tell the user
+the session id and url ("Your barter session is {id} — follow it at
+{url}") so they can watch live, then continue. Report every step
 as it happens: POST ${base}/sessions/{session}/events with JSON
 {"type": "...", ...details}. Types: quote, proof, barter, best, done.
 Include vendor, url and price on quote events so the recap shows sources.
@@ -260,6 +265,7 @@ Proof service: ${process.env.LANDING_SIDECAR_URL ?? "http://localhost:8080"}
   ask anyone to trust a price you merely claim.
 
 ## Steps
+0. Session: create it (above) and tell the user the session id and url.
 1. Anchor: find the product online, take the first real price, and prove
    that response with the sidecar. Store the proof (above) right away.
 2. Quote: open a conversation at BOTH vendors with
@@ -300,23 +306,21 @@ const STYLE = `
   li{margin:6px 0;line-height:1.5}
 `;
 
-const landingPage = (base) => `<!doctype html><meta charset="utf-8">
+const landingPage = (base, missing = false) => `<!doctype html><meta charset="utf-8">
 <title>Barter</title><style>${STYLE}</style>
 <h1>Ask your agent to barter for you.</h1>
-<p class="lede">Type anything. Your agent finds it online, proves the price
-with TLSNotary, and barters two vendors down against each other. No app to
-install — the agent learns the protocol from this page.</p>
+<p class="lede">Your agent finds it online, proves the price with
+TLSNotary, and barters two vendors down against each other. No app to
+install — the agent learns the protocol from this page and starts the
+session itself.</p>
 <div class="say">Say to your agent:<br>
 <strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me a deal."</strong><br>
-<span class="note">Or use the form: submitting creates your live session.</span></div>
-<form method="post" action="/sessions">
-<label for="product">What should your agent find?</label>
-<input id="product" name="product" required placeholder="Deodorant, a laptop, running shoes…">
-<label for="budget">Maximum budget (USD, optional)</label>
-<input id="budget" name="budget" type="number" min="1" step="any" placeholder="No limit">
-<label for="initiatedBy">Your name (optional)</label>
-<input id="initiatedBy" name="initiatedBy" placeholder="Who is asking">
-<button type="submit">Start bartering</button>
+<span class="note">It will give you a session ID to follow here.</span></div>
+<form method="get" action="/follow">
+<label for="sid">Started a session? Enter its ID to follow the bartering</label>
+<input id="sid" name="id" required placeholder="e.g. AB12CD" autocomplete="off">
+<button type="submit">Follow session</button>
+${missing ? `<p class="note">That session ID was not found. Check the ID your agent gave you.</p>` : ""}
 </form>
 <p class="note">Recent sessions: <a href="/panel">control panel</a> ·
 For agents: <a href="/llms.txt">/llms.txt</a></p>
@@ -350,7 +354,7 @@ const page = (rec, base) => `<!doctype html><meta charset="utf-8">
 <div class="say">Say to your agent:<br>
 <strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me a deal."</strong></div>
 <label>Paste this prompt (session ${rec.id})</label>
-<pre id="prompt">Use ${base}/llms.txt to find the best deal for "${esc(rec.product)}"${rec.budget != null ? ` under $${rec.budget}` : ""}. Session: ${rec.id}. Follow the barter protocol there, report every step using the event endpoints in llms.txt, store each proof when you obtain it, and show me the best offer before buying anything. Return ${base}/s/${rec.id} when done.</pre>
+<pre id="prompt">Use ${base}/llms.txt to find the best deal for "${esc(rec.product)}"${rec.budget != null ? ` under $${rec.budget}` : ""}. Session: ${rec.id} (use this session; do not create another). Follow the barter protocol there, report every step using the event endpoints in llms.txt, store each proof when you obtain it, and show me the best offer before buying anything. Return ${base}/s/${rec.id} when done.</pre>
 <button onclick="navigator.clipboard.writeText(document.getElementById('prompt').textContent)">Copy prompt</button>
 <button class="secondary" onclick="fetch('/sessions/${rec.id}/run',{method:'POST'})">Simulate agent run</button>
 <div class="row">
@@ -500,7 +504,17 @@ export const server = createServer(async (req, res) => {
   const base = `${proto}://${req.headers.host ?? `localhost:${port}`}`;
   const url = new URL(req.url, base);
   try {
-    if (req.method === "GET" && url.pathname === "/") return send(res, 200, landingPage(base), "text/html");
+    if (req.method === "GET" && url.pathname === "/")
+      return send(res, 200, landingPage(base, url.searchParams.get("missing") === "1"), "text/html");
+    if (req.method === "GET" && url.pathname === "/follow") {
+      const id = (url.searchParams.get("id") ?? "").trim().toUpperCase();
+      if (id && getSessionRec(id)) {
+        res.writeHead(303, { Location: `/s/${id}` });
+        return res.end();
+      }
+      res.writeHead(303, { Location: "/?missing=1" });
+      return res.end();
+    }
     if (req.method === "POST" && url.pathname === "/sessions") {
       const body = await readBody(req);
       const product = String(body.product ?? "").trim();

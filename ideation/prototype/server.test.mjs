@@ -50,10 +50,22 @@ test("typed product creates a persisted session with a recap", async () => {
   assert.ok(mine.logs.some((l) => l.event === "quote"));
 });
 
-test("landing renders the input form, and products are escaped", async () => {
+test("landing has no creation form; it follows agent-started sessions", async () => {
   const home = await (await fetch(`${base}/`)).text();
-  assert.match(home, /name="product"/);
-  assert.match(home, /Start bartering/);
+  assert.match(home, /Started a session\? Enter its ID/);
+  assert.match(home, /name="id"/);
+  assert.ok(!home.includes('name="product"'), "homepage must not create sessions");
+
+  const created = await post("/sessions", { product: "Trail Shoes", initiatedBy: "muse-agent" });
+  const { id } = await created.json();
+  const followed = await fetch(`${base}/follow?id=${id.toLowerCase()}`, { redirect: "manual" });
+  assert.equal(followed.status, 303);
+  assert.equal(followed.headers.get("location"), `/s/${id}`);
+  const missed = await fetch(`${base}/follow?id=ZZZZZZ`, { redirect: "manual" });
+  assert.equal(missed.headers.get("location"), "/?missing=1");
+});
+
+test("products are escaped on the session page", async () => {
 
   const created = await post("/sessions", { product: '"><script>alert(1)</script>' });
   const { id } = await created.json();
