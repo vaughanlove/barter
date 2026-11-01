@@ -386,6 +386,22 @@ const STYLE = `
   .faq details p{margin:8px 0 4px}
   .rotator{border-bottom:2px solid #1c1c1a;white-space:nowrap}
   @media (prefers-reduced-motion: reduce){ .rotator{border-bottom-style:dotted} }
+  @media (max-width: 640px){
+    body{margin:30px auto;padding:0 16px}
+    h1{font-size:41px}
+    .lede{font-size:19.5px;line-height:1.62}
+    .cardwrap{margin:30px auto 30px}
+    .say{padding:30px 24px}
+    .quote{font-size:33px;line-height:1.35}
+    .rotator{white-space:normal}
+    .copychip{font-size:14.5px;padding:11px 17px;bottom:-18px;right:12px}
+    .faq summary{font-size:18.5px;padding:4px 0}
+    .faq details p{font-size:15.5px}
+    label{font-size:14.5px}
+    input{font-size:17px;padding:11px 12px}
+    button{font-size:16px;padding:12px 18px}
+    small, .note{font-size:14.5px}
+  }
 `;
 
 const landingPage = (base, missing = false) => {
