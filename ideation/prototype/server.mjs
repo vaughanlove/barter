@@ -280,9 +280,22 @@ else, create the session: POST ${base}/sessions with JSON
  "keyphrase": "velvet otter meadow"}
 -> {"id": "...", "url": "${base}/s/{id}", "keyphrase": "..."}. Check
 the response echoes the same keyphrase; if it does not, your session
-will not be found. Then proceed straight to the steps without waiting
-to report back; you return the url at the end. Report every step as
-it happens: POST ${base}/sessions/{session}/events with JSON
+will not be found. Then proceed straight to the steps.
+
+## Talking to the user (strict)
+- Every quote, proof and barter step goes to the session record ONLY:
+  POST ${base}/sessions/{session}/events and, for presentations,
+  POST ${base}/sessions/{session}/proofs. Never narrate steps,
+  prices-in-progress, or results to the user in chat while working.
+- Say nothing about the protocol while working. No jargon or debug
+  talk: never use anchor, proof, presentation, TLSNotary, exchange,
+  round, floor, attested, vendor agent, or session id in chat.
+- At most one in-progress line is allowed, exactly this plain form:
+  "Looking for the best price…"
+- Your only other chat message is the final message (see step 4).
+
+Report every step as it happens:
+POST ${base}/sessions/{session}/events with JSON
 {"type": "...", ...details}. Types: quote, proof, barter, best, done.
 Include vendor, url and price on quote events so the recap shows sources.
 When you obtain a presentation, store it immediately (not at the end):
@@ -329,8 +342,16 @@ Proof service: ${process.env.LANDING_SIDECAR_URL ?? "http://localhost:8080"}
    below its floor. Carry each new counter back the same way. Alternate
    until a vendor holds at its floor or 6 exchanges pass.
 4. Best: post {"type":"best","price":0,"vendor":"..."}, then
-   {"type":"done","needsApproval":true}. Return ${base}/s/{session} to
-   the user and show the best offer. Do NOT buy before the user approves.
+   {"type":"done","needsApproval":true}. Then send the user exactly
+   one final message in exactly this shape, nothing else:
+
+   <product>: best price $<price> at <vendor name>.
+   ${base}/s/{session}
+   Want me to go ahead and buy it?
+
+   Give the FULL session link, never the bare session id. No other
+   prices, no steps, no protocol words. Do NOT buy anything before
+   the user approves.
 `;
 
 const esc = (s) =>
@@ -354,6 +375,17 @@ const STYLE = `
   .best .price{font-size:32px}
   .badge{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;border:1px solid #1c1c1a;padding:1px 6px}
   li{margin:6px 0;line-height:1.5}
+  .cardwrap{position:relative;max-width:560px;margin:38px auto 34px}
+  .say{margin:0;padding:38px 36px}
+  .quote{font-size:29px;line-height:1.3;margin:0}
+  .copychip{position:absolute;right:18px;bottom:-15px;margin:0;font-size:12.5px;padding:7px 13px;box-shadow:3px 3px 0 #1c1c1a}
+  .faq{margin-top:46px;border-top:1.5px solid #1c1c1a;padding-top:8px}
+  .faq h2{font-size:21px;margin:14px 0 6px}
+  .faq details{border-bottom:1px solid #d8d5c9;padding:10px 0}
+  .faq summary{cursor:pointer;font-size:16.5px}
+  .faq details p{margin:8px 0 4px}
+  .rotator{border-bottom:2px solid #1c1c1a;white-space:nowrap}
+  @media (prefers-reduced-motion: reduce){ .rotator{border-bottom-style:dotted} }
 `;
 
 const landingPage = (base, missing = false) => {
@@ -362,27 +394,60 @@ const landingPage = (base, missing = false) => {
   return `<!doctype html><meta charset="utf-8">
 <title>Barter</title><style>${STYLE}</style>
 <h1>Ask your agent to barter for you.</h1>
-<p class="lede">Your agent finds it online, proves the price with
-TLSNotary, and barters two vendors down against each other. No app to
-install — the agent learns the protocol from this page and starts the
-session itself.</p>
-<div class="say">Say to your agent:<br>
-<strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on …"</strong><br>
-<span class="note">Finish the sentence with whatever you want — deodorant, a laptop, anything — and include your keyphrase:</span>
-<pre style="margin:12px 0 0">Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on [your item]. Keyphrase: ${phrase}</pre>
-<button onclick="navigator.clipboard.writeText(document.querySelector('.say pre').textContent)">Copy prompt</button></div>
-<p id="waiting">Waiting for your agent to start… this page jumps to your session on its own. Keyphrase: <code>${phrase}</code>. It also follows the next session your agent starts, phrase or not.</p>
-<form method="get" action="/follow">
-<label for="phrase">On another device? Enter your keyphrase</label>
-<input id="phrase" name="phrase" required placeholder="e.g. velvet otter meadow" autocomplete="off">
-<button type="submit">Follow session</button>
-${missing ? `<p class="note">That keyphrase was not found yet. Check the phrase in your prompt.</p>` : ""}
-</form>
-<p class="note">Recent sessions: <a href="/panel">control panel</a> ·
-For agents: <a href="/llms.txt">/llms.txt</a></p>
-${listSessionRecs().slice(-8).reverse().map((s) => `<p><a href="/s/${s.id}">${esc(s.product || "Session")} — ${s.id}</a> <span class="note">${esc(s.status)}${s.best_price != null ? ` · best $${s.best_price}` : ""}</span></p>`).join("")}
+<p class="lede">Point your own agent to barter.computer and watch it barter with
+different vendors to find you the best price on products. No app to
+install. Let your agent bring its own tools and style to bartering
+in a trustless manner. And no price is taken on faith: each one is
+cryptographically attested with
+<a href="https://github.com/tlsnotary/tlsn">TLSNotary</a>, so vendors
+only move on prices that check out.</p>
+<div class="cardwrap">
+<div class="say"><p class="quote">&ldquo;Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on <span class="rotator" id="rotator">deodorant</span>&rdquo;</p></div>
+<button class="copychip" onclick="navigator.clipboard.writeText('Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on [your item]. Keyphrase: ${phrase}');this.textContent='Copied'">Copy prompt</button>
+</div>
+<div class="faq">
+<h2>Questions</h2>
+<details><summary>What do I say to my agent?</summary><p class="note">Copy the prompt above, finish the sentence with whatever you want, deodorant, a laptop, anything, and send it as-is. The three-word keyphrase at the end ties your agent's run to this page.</p></details>
+<details><summary>What happens next?</summary><p class="note">Leave this page open. Your agent finds the product online, proves the price with TLSNotary, and barters two vendors against each other. This page jumps to the live session by itself.</p></details>
+<details><summary>Do I need an app or an account?</summary><p class="note">No. Your agent learns the whole protocol from this site's <code>/llms.txt</code>. Nothing to install, nothing to sign up for.</p></details>
+<details><summary>What is the keyphrase for?</summary><p class="note">It is how this page recognises your agent's run among all sessions. Three spoken words, easy to say out loud and hard to mix up.</p></details>
+<details><summary>Will it buy anything on its own?</summary><p class="note">Never. The run ends at the best offer and waits. Nothing is bought before you approve it.</p></details>
+<details><summary>Nothing happened. What now?</summary><p class="note">Ask your agent for the session link, or tell it the keyphrase again and ask it to follow the protocol at <code>/llms.txt</code>.</p></details>
+</div>
 <script>
-const waiting = document.getElementById('waiting');
+(function rotate() {
+  const el = document.getElementById('rotator');
+  if (!el) return;
+  const words = ['deodorant', 'toothpaste', 'kidney beans'];
+  const chars = 'abcdefghijklmnopqrstuvwxyz';
+  let wi = 0;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function scrambleTo(next) {
+    const from = el.textContent;
+    const steps = 14;
+    let step = 0;
+    const tick = () => {
+      step++;
+      const p = step / steps;
+      const len = Math.round(from.length + (next.length - from.length) * p);
+      let out = '';
+      for (let i = 0; i < len; i++) {
+        const done = i < next.length * p * p;
+        out += done ? next[i] : (next[i] === ' ' ? ' ' : chars[Math.floor(Math.random() * chars.length)]);
+      }
+      el.textContent = out || ' ';
+      if (step < steps) setTimeout(tick, 35);
+      else { el.textContent = next; setTimeout(cycle, 2000); }
+    };
+    tick();
+  }
+  function cycle() {
+    wi = (wi + 1) % words.length;
+    if (reduced) { el.textContent = words[wi]; setTimeout(cycle, 2000); }
+    else scrambleTo(words[wi]);
+  }
+  setTimeout(cycle, 2000);
+})();
 async function poll() {
   try {
     const r = await fetch('/api/handoff?phrase=' + encodeURIComponent('${phrase}') + '&since=${since}');
