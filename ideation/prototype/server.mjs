@@ -192,7 +192,7 @@ const emit = (id, type, data) => {
   }
   if (type === "done") touchSession(id, { status: "done" });
   for (const res of s.clients) res.write(`data: ${JSON.stringify(ev)}\n\n`);
-  pushLog(id, type, data);
+  pushLog(id, type, data, true);
   return true;
 };
 
@@ -204,13 +204,13 @@ const emit = (id, type, data) => {
 const logsBySession = new Map(); // sessionId -> [log]
 const panelClients = new Set();
 
-function pushLog(sessionId, event, attrs = {}) {
+function pushLog(sessionId, event, attrs = {}, alreadyPersisted = false) {
   const id = sessionId || attrs.sessionId || attrs.conversationId || "unknown";
   const log = { t: new Date().toISOString(), sessionId: id, event, ...attrs };
   if (!logsBySession.has(id)) logsBySession.set(id, []);
   logsBySession.get(id).push(log);
   if (getSessionRec(id)) {
-    persistEvent(id, event, attrs);
+    if (!alreadyPersisted) persistEvent(id, event, attrs);
     applyVendorVerdict(id, event, attrs);
   }
   const payload = `data: ${JSON.stringify({ kind: "log", log })}\n\n`;
@@ -475,57 +475,103 @@ poll();
 </script>`;
 };
 
-function recapHtml(rec, base) {
-  const events = listEvents(rec.id);
-  const proofs = listProofs(rec.id);
-  const sources = events.filter((e) => e.type === "quote" && (e.vendor || e.url));
-  const best =
-    rec.best_price != null
-      ? `<div class="best"><div>Best offer${rec.best_vendor ? ` — ${esc(rec.best_vendor)}` : ""}</div><div class="price">$${rec.best_price}</div><div>For: ${esc(rec.product)} · status ${esc(rec.status)}</div></div>`
-      : "";
-  const timeline = events.length
-    ? `<ol>${events.map((e) => { const { ts, type, ...rest } = e; return `<li><strong>${esc(type)}</strong> <span class="note">${esc(ts)}</span><br><code>${esc(JSON.stringify(rest))}</code></li>`; }).join("")}</ol>`
-    : `<p class="note">No steps yet. The agent posts each quote, proof and barter here as it happens.</p>`;
-  const proofList = proofs.length
-    ? `<ul>${proofs.map((p) => `<li>TLSNotary proof <span class="badge">${esc(p.verdict)}</span><br><span class="note">attests ${p.attested_price != null ? `$${p.attested_price} ` : ""}from ${esc(p.host)}${esc(p.path)} · ${esc((p.presentation || "").length)} chars · sha ${esc(String(p.hash).slice(0, 12))}… · stored ${esc(p.created_at)}</span></li>`).join("")}</ul>`
-    : `<p class="note">No proofs stored yet. Proofs are stored when generated, not handed back at the end.</p>`;
-  const sourceList = sources.length
-    ? `<ul>${sources.map((s) => `<li>${esc(s.vendor ?? "vendor")} — $${esc(s.price)} <span class="note">${esc(s.url ?? "")}</span></li>`).join("")}</ul>`
-    : `<p class="note">Sources appear with each quote.</p>`;
-  return `${best}<h2>Recap — ${esc(rec.product || "session")}</h2>${proofList}<h3>Timeline</h3>${timeline}<h3>Sources</h3>${sourceList}`;
+const fmtPrice = (n) => (typeof n === "number" ? `$${n}` : null);
+
+function eventCall(e) {
+  const type = e.type ?? e.event ?? "event";
+  const args = [];
+  const put = (k, v) => { if (v !== undefined && v !== null && v !== "") args.push(`${k}=${typeof v === "number" ? v : `"${v}"`}`); };
+  put("vendor", e.vendor ?? e.provider);
+  put("url", e.url);
+  put("host", e.host);
+  if (typeof e.attestedPrice === "number") args.push(`attests=$${e.attestedPrice}`);
+  put("round", e.round);
+  if (typeof e.price === "number") args.push(`price=$${e.price}`);
+  put("hash", e.hash);
+  return `${String(type).replace(/^(vendor|muse|notary)\./, "")}(${args.join(", ")})`;
 }
 
-const page = (rec, base) => `<!doctype html><meta charset="utf-8">
-<title>Barter — ${esc(rec.product || rec.id)}</title><style>${STYLE}</style>
+function movementOf(e, lastPrice) {
+  const price = typeof e.price === "number" ? e.price : null;
+  if (price === null || lastPrice === null) return { tag: "stayed", cls: "flat", price };
+  if (price < lastPrice) return { tag: `down $${(Math.round((lastPrice - price) * 100) / 100).toFixed(2)}`, cls: "down", price };
+  if (price > lastPrice) return { tag: `up $${(Math.round((price - lastPrice) * 100) / 100).toFixed(2)}`, cls: "up", price };
+  return { tag: "stayed", cls: "flat", price };
+}
+
+function treeRowsHtml(rec) {
+  const events = listEvents(rec.id);
+  const proofs = listProofs(rec.id);
+  let lastPrice = null;
+  let lastKey = "";
+  const rows = events.map((e) => {
+    const type = String(e.type ?? "event");
+    // The same step can arrive twice (agent event + vendor OTEL copy,
+    // or rows stored before the dedup fix). Show each call once.
+    const key = `${eventCall(e)}|${e.price ?? ""}|${e.attestedPrice ?? ""}`;
+    if (key === lastKey) return "";
+    lastKey = key;
+    const mv = movementOf(e, lastPrice);
+    if (mv.price !== null) lastPrice = mv.price;
+    const verdict = type === "proof"
+      ? (proofs.find((pr) => String(pr.hash).startsWith(String(e.hash ?? "")))?.verdict ?? "")
+      : "";
+    return `<div class="trow"><span class="ttag">${esc(type.split(".")[0].toUpperCase())}</span><span class="tcall">${esc(eventCall(e))}</span>${verdict ? `<span class="ttag verdict">${esc(verdict)}</span>` : ""}<span class="tmove ${mv.cls}">${mv.price !== null ? esc(mv.tag) : ""}</span></div>`;
+  });
+  return { rows: rows.join(""), lastPrice, count: rows.filter(Boolean).length };
+}
+
+const page = (rec, base) => {
+  const tree = treeRowsHtml(rec);
+  return `<!doctype html><meta charset="utf-8">
+<title>Barter: ${esc(rec.product || rec.id)}</title><style>${STYLE}
+  .tree{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;border:1.5px solid #1c1c1a;background:#fff;margin:22px 0}
+  .troot{display:flex;gap:8px;align-items:center;padding:7px 10px;border-bottom:1.5px solid #1c1c1a;background:#1c1c1a;color:#fbfaf7}
+  .tchildren{margin-left:14px;border-left:1px solid #d8d5c9;padding:4px 0 6px}
+  .trow{display:flex;gap:8px;align-items:center;padding:2.5px 10px;line-height:1.45;white-space:nowrap;overflow-x:auto}
+  .trow:hover{background:#f4f2ea}
+  .ttag{font-size:10px;letter-spacing:.06em;border:1px solid #1c1c1a;padding:0 5px;flex:none}
+  .ttag.verdict{background:#1c1c1a;color:#fbfaf7}
+  .tcall{overflow:hidden;text-overflow:ellipsis}
+  .tmove{margin-left:auto;flex:none;font-size:11px}
+  .tmove.down{color:#137333}.tmove.up{color:#b3261e}.tmove.flat{color:#6b6b66}
+</style>
 <h1>${esc(rec.product || "Your barter")}</h1>
-<p class="lede">Session ${rec.id} · ${esc(rec.status)}${rec.budget != null ? ` · budget $${rec.budget}` : ""}${rec.keyphrase ? ` · keyphrase <code>${esc(rec.keyphrase)}</code>` : ""}. Your agent barters live; this page is the record.</p>
-<div class="say">Say to your agent:<br>
-<strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on …"</strong></div>
-<label>Paste this prompt (session ${rec.id})</label>
-<pre id="prompt">Use ${base}/llms.txt to find the best deal for "${esc(rec.product)}"${rec.budget != null ? ` under $${rec.budget}` : ""}. Session: ${rec.id} (use this session; do not create another). Follow the barter protocol there, report every step using the event endpoints in llms.txt, store each proof when you obtain it, and show me the best offer before buying anything. Return ${base}/s/${rec.id} when done.</pre>
-<button onclick="navigator.clipboard.writeText(document.getElementById('prompt').textContent)">Copy prompt</button>
-<button class="secondary" onclick="fetch('/sessions/${rec.id}/run',{method:'POST'})">Simulate agent run</button>
-<div class="row">
-  <div><label>Scan with your phone</label>
-    <img alt="QR code for this session" width="180" height="180" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${base}/s/${rec.id}`)}"></div>
-  <div><label>Watch</label>
-    <p class="note">Session link: <a href="/s/${rec.id}">${base}/s/${rec.id}</a><br>
-    All sessions: <a href="/panel">control panel</a><br>
-    For agents: <a href="/llms.txt">/llms.txt</a></p></div>
+<p class="lede">Session ${rec.id} · ${esc(rec.status)}${rec.budget != null ? ` · budget $${rec.budget}` : ""}${rec.keyphrase ? ` · keyphrase <code>${esc(rec.keyphrase)}</code>` : ""}</p>
+${rec.best_price != null ? `<div class="best"><div>Best offer${rec.best_vendor ? ` from ${esc(rec.best_vendor)}` : ""}</div><div class="price">$${rec.best_price}</div></div>` : ""}
+<div class="tree">
+<div class="troot"><span class="ttag">SESSION</span><span class="tcall">session(product="${esc(rec.product)}", status="${esc(rec.status)}")</span><span class="tmove flat">${tree.count} calls</span></div>
+<div class="tchildren" id="tchildren">${tree.rows || `<div class="trow"><span class="tcall">waiting for the agent to start</span></div>`}</div>
 </div>
-<div id="recap">${recapHtml(rec, base)}</div>
-<h2 style="font-size:19px;margin-top:30px">Live</h2>
-<div id="log"></div>
 <script>
-const log = document.getElementById('log');
-new EventSource('/sessions/${rec.id}/stream').onmessage = e => {
-  const d = JSON.parse(e.data);
+let lastPrice = ${tree.lastPrice ?? "null"};
+const treeEl = document.getElementById('tchildren');
+function escHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function appendRow(d){
+  const price = typeof d.price === 'number' ? d.price : null;
+  let mv = '', cls = 'flat';
+  if (price !== null && lastPrice !== null) {
+    if (price < lastPrice) { mv = 'down $' + (lastPrice - price).toFixed(2); cls = 'down'; }
+    else if (price > lastPrice) { mv = 'up $' + (price - lastPrice).toFixed(2); cls = 'up'; }
+    else mv = 'stayed';
+  }
+  if (price !== null) lastPrice = price;
+  const type = String(d.type || 'event');
+  const args = [];
+  if (d.vendor || d.provider) args.push('vendor="' + (d.vendor || d.provider) + '"');
+  if (d.url) args.push('url="' + d.url + '"');
+  if (d.host) args.push('host="' + d.host + '"');
+  if (typeof d.attestedPrice === 'number') args.push('attests=$' + d.attestedPrice);
+  if (d.round) args.push('round=' + d.round);
+  if (price !== null) args.push('price=$' + price);
   const div = document.createElement('div');
-  div.className = 'ev';
-  div.textContent = d.type + ': ' + JSON.stringify(d);
-  log.prepend(div);
-};
+  div.className = 'trow';
+  div.innerHTML = '<span class="ttag">' + escHtml(type.split('.')[0].toUpperCase()) + '</span><span class="tcall">' + escHtml(type.replace(/^(vendor|muse|notary)\./,'') + '(' + args.join(', ') + ')') + '</span><span class="tmove ' + cls + '">' + escHtml(mv) + '</span>';
+  treeEl.appendChild(div);
+}
+new EventSource('/sessions/${rec.id}/stream').onmessage = e => appendRow(JSON.parse(e.data));
 </script>`;
+};
 
 const panelPage = `<!doctype html><meta charset="utf-8">
 <title>Barter control panel</title>
