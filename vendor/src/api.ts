@@ -95,10 +95,18 @@ function emit(
 // is only trusted because it came out of presentation verification.
 function attestedPrice(verified: Record<string, unknown>): number | null {
   const received = typeof verified.received === "string" ? verified.received : "";
-  const match =
-    received.match(/"price"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?/) ??
-    received.match(/\$\s*([0-9]+(?:\.[0-9]+)?)/);
-  return match ? Number(match[1]) : null;
+  // Quoted decimal dollars first: "price":"19.95" (Shopify .json).
+  const quoted = received.match(/"price"\s*:\s*"([0-9]+(?:\.[0-9]+)?)"/);
+  if (quoted) return Number(quoted[1]);
+  const bare = received.match(/"price"\s*:\s*([0-9]+(?:\.[0-9]+)?)/);
+  // Shopify .js prices are integer cents ("price":1995 = $19.95), marked
+  // by the sibling cents fields. A bare integer price there is cents.
+  if (bare && !bare[1].includes(".") && /"(price_min|price_max|compare_at_price)"/.test(received)) {
+    return Number(bare[1]) / 100;
+  }
+  const dollar = received.match(/\$\s*([0-9]+(?:\.[0-9]+)?)/);
+  if (dollar) return Number(dollar[1]);
+  return bare ? Number(bare[1]) : null;
 }
 
 async function verifyPresentation(

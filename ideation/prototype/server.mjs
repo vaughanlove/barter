@@ -314,8 +314,9 @@ Proof service: ${process.env.LANDING_SIDECAR_URL ?? "http://localhost:8080"}
    find, wherever you found it — the sidecar proves any public HTTPS
    host. That first proof is the anchor both vendors derive from.
    Store the proof (above) right away. Prefer an API-shaped JSON
-   response containing "price" (Shopify stores serve
-   {host}/products/{handle}.json in this shape). If no online price
+   response with a decimal dollar price, e.g. "price":"19.95"
+   (Shopify stores: use {host}/products/{handle}.json — the .js
+   endpoint prices in integer cents). If no online price
    can be proved, say so in an event; never invent an anchor price.
 2. Quote: open a conversation at BOTH vendors with
    {"product": "<typed product>", "presentationB64": "<anchor proof>",
@@ -357,6 +358,7 @@ const STYLE = `
 
 const landingPage = (base, missing = false) => {
   const phrase = genKeyphrase();
+  const since = Date.now();
   return `<!doctype html><meta charset="utf-8">
 <title>Barter</title><style>${STYLE}</style>
 <h1>Ask your agent to barter for you.</h1>
@@ -369,7 +371,7 @@ session itself.</p>
 <span class="note">Finish the sentence with whatever you want — deodorant, a laptop, anything — and include your keyphrase:</span>
 <pre style="margin:12px 0 0">Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on [your item]. Keyphrase: ${phrase}</pre>
 <button onclick="navigator.clipboard.writeText(document.querySelector('.say pre').textContent)">Copy prompt</button></div>
-<p id="waiting">Waiting for your agent to start… this page jumps to your session on its own. Keyphrase: <code>${phrase}</code></p>
+<p id="waiting">Waiting for your agent to start… this page jumps to your session on its own. Keyphrase: <code>${phrase}</code>. It also follows the next session your agent starts, phrase or not.</p>
 <form method="get" action="/follow">
 <label for="phrase">On another device? Enter your keyphrase</label>
 <input id="phrase" name="phrase" required placeholder="e.g. velvet otter meadow" autocomplete="off">
@@ -383,7 +385,7 @@ ${listSessionRecs().slice(-8).reverse().map((s) => `<p><a href="/s/${s.id}">${es
 const waiting = document.getElementById('waiting');
 async function poll() {
   try {
-    const r = await fetch('/api/keyphrase/' + encodeURIComponent('${phrase}'));
+    const r = await fetch('/api/handoff?phrase=' + encodeURIComponent('${phrase}') + '&since=${since}');
     if (r.ok) { const d = await r.json(); location.href = d.url; return; }
   } catch {}
   setTimeout(poll, 2500);
@@ -583,6 +585,24 @@ export const server = createServer(async (req, res) => {
       res.writeHead(303, { Location: "/?missing=1" });
       return res.end();
     }
+    if (req.method === "GET" && url.pathname === "/api/handoff") {
+      // Primary: the agent passed the keyphrase through. Fallback: the
+      // agent reliably creates a session but not reliably the phrase —
+      // follow the newest session started after this page loaded.
+      const phrase = url.searchParams.get("phrase") ?? "";
+      const byPhrase = phrase ? getSessionByKeyphrase(phrase) : null;
+      if (byPhrase) {
+        return send(res, 200, { id: byPhrase.id, url: `/s/${byPhrase.id}`, via: "keyphrase" });
+      }
+      const since = Number(url.searchParams.get("since") ?? 0);
+      if (Number.isFinite(since) && since > 0) {
+        const latest = [...listSessionRecs()]
+          .reverse()
+          .find((s) => Date.parse(s.created_at) >= since);
+        if (latest) return send(res, 200, { id: latest.id, url: `/s/${latest.id}`, via: "latest" });
+      }
+      return send(res, 404, { error: "no session yet" });
+    }
     const km = url.pathname.match(/^\/api\/keyphrase\/(.+)$/);
     if (req.method === "GET" && km) {
       const rec = getSessionByKeyphrase(decodeURIComponent(km[1]));
@@ -619,6 +639,9 @@ export const server = createServer(async (req, res) => {
         id: rec.id,
         product: rec.product,
         status: rec.status,
+        keyphrase: rec.keyphrase ?? null,
+        initiatedBy: rec.initiated_by,
+        createdAt: rec.created_at,
         logs: listEvents(rec.id).map(({ ts, type, ...rest }) => ({
           t: ts,
           sessionId: rec.id,

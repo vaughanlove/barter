@@ -55,7 +55,7 @@ test("landing issues a keyphrase, polls for it, and follows it", async () => {
   assert.match(home, /find me the best price on/);
   assert.match(home, /Keyphrase: [a-z]+ [a-z]+ [a-z]+/);
   assert.ok(!/Keyphrase: [a-z]+-/.test(home), "keyphrase must be spoken words, no hyphens");
-  assert.match(home, /\/api\/keyphrase\//);
+  assert.match(home, /\/api\/handoff/);
   assert.match(home, /name="phrase"/);
   assert.ok(!home.includes('name="product"'), "homepage must not create sessions");
 
@@ -79,6 +79,22 @@ test("landing issues a keyphrase, polls for it, and follows it", async () => {
   assert.equal(followed.headers.get("location"), `/s/${id}`);
   const missed = await fetch(`${base}/follow?phrase=nope nope nope`, { redirect: "manual" });
   assert.equal(missed.headers.get("location"), "/?missing=1");
+});
+
+test("handoff follows the newest session even without a keyphrase", async () => {
+  const since = Date.now() - 1000;
+  const created = await post("/sessions", { product: "Phraseless Gadget", initiatedBy: "muse-agent" });
+  const { id } = await created.json();
+
+  const viaLatest = await fetch(`${base}/api/handoff?phrase=unclaimed words here&since=${since}`);
+  assert.equal(viaLatest.status, 200);
+  assert.deepEqual(await viaLatest.json(), { id, url: `/s/${id}`, via: "latest" });
+
+  const tooEarly = await fetch(`${base}/api/handoff?phrase=unclaimed words here&since=${Date.now() + 60000}`);
+  assert.equal(tooEarly.status, 404);
+
+  const viaPhrase = await fetch(`${base}/api/handoff?phrase=velvet otter meadow&since=${since}`);
+  assert.equal((await viaPhrase.json()).via, "keyphrase");
 });
 
 test("products are escaped on the session page", async () => {
