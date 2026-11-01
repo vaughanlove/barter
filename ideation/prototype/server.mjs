@@ -31,13 +31,16 @@ try {
   db = new DatabaseSync(DB_PATH);
   db.exec(`CREATE TABLE IF NOT EXISTS sessions(
     id TEXT PRIMARY KEY, product TEXT, initiated_by TEXT, budget REAL,
-    status TEXT, best_price REAL, best_vendor TEXT, created_at TEXT, updated_at TEXT);
+    status TEXT, best_price REAL, best_vendor TEXT, created_at TEXT, updated_at TEXT,
+    keyphrase TEXT);
     CREATE TABLE IF NOT EXISTS events(
     session_id TEXT, ts TEXT, type TEXT, payload TEXT);
     CREATE TABLE IF NOT EXISTS proofs(
     session_id TEXT, hash TEXT, host TEXT, path TEXT, attested_price REAL,
     presentation TEXT, verdict TEXT, created_at TEXT,
     PRIMARY KEY(session_id, hash));`);
+  const cols = db.prepare("PRAGMA table_info(sessions)").all().map((c) => c.name);
+  if (!cols.includes("keyphrase")) db.exec("ALTER TABLE sessions ADD COLUMN keyphrase TEXT");
 } catch {
   db = null; // JSON fallback below
 }
@@ -53,7 +56,32 @@ const saveJson = () => {
 };
 const now = () => new Date().toISOString();
 
-function createSessionRec({ product, initiatedBy, budget }) {
+const KEYWORDS = [
+  "amber", "aspen", "atlas", "basil", "beacon", "birch", "breeze", "canyon",
+  "cedar", "clover", "cobalt", "coral", "crane", "dune", "ember", "falcon",
+  "fern", "flint", "glade", "harbor", "hazel", "heron", "island", "juniper",
+  "kelp", "lagoon", "laurel", "linen", "lotus", "lumen", "maple", "marble",
+  "meadow", "mesa", "mosaic", "nectar", "oasis", "olive", "onyx", "opal",
+  "orchid", "osprey", "otter", "pebble", "pine", "quartz", "quill", "raven",
+  "reed", "ridge", "river", "sable", "saffron", "salmon", "sand", "sorrel",
+  "spruce", "summit", "tide", "topaz", "tulip", "velvet", "willow", "zephyr",
+];
+export const normalizeKeyphrase = (s) =>
+  String(s ?? "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+export const genKeyphrase = () => {
+  const pick = () => KEYWORDS[randomBytes(1)[0] % KEYWORDS.length];
+  return `${pick()}-${pick()}-${pick()}-${10 + (randomBytes(1)[0] % 90)}`;
+};
+function getSessionByKeyphrase(phrase) {
+  const kp = normalizeKeyphrase(phrase);
+  if (!kp) return null;
+  if (db) {
+    return db.prepare("SELECT * FROM sessions WHERE keyphrase=? ORDER BY created_at DESC").get(kp) ?? null;
+  }
+  return [...jsonStore.sessions].reverse().find((s) => s.keyphrase === kp) ?? null;
+}
+
+function createSessionRec({ product, initiatedBy, budget, keyphrase }) {
   const rec = {
     id: randomBytes(3).toString("hex").toUpperCase(),
     product: product || "",
@@ -64,11 +92,12 @@ function createSessionRec({ product, initiatedBy, budget }) {
     best_vendor: null,
     created_at: now(),
     updated_at: now(),
+    keyphrase: keyphrase ? normalizeKeyphrase(keyphrase) : null,
   };
   if (db) {
     db.prepare(
-      "INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?)",
-    ).run(rec.id, rec.product, rec.initiated_by, rec.budget, rec.status, null, null, rec.created_at, rec.updated_at);
+      "INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?)",
+    ).run(rec.id, rec.product, rec.initiated_by, rec.budget, rec.status, null, null, rec.created_at, rec.updated_at, rec.keyphrase);
   } else {
     jsonStore.sessions.push(rec);
     saveJson();
@@ -232,13 +261,18 @@ You are the user's personal shopping agent. Find the best deal by bartering
 with vendor agents, using TLSNotary proofs as leverage. Work signed-out.
 
 ## Session (you start it; watch-along + record)
-There is no web form. You are the entrypoint. Before anything else,
-create the session: POST ${base}/sessions with JSON
-{"product": "<what the user asked for>", "initiatedBy": "muse-agent"}
--> {"id": "...", "url": "${base}/s/{id}"}. Immediately tell the user
-the session id and url ("Your barter session is {id} — follow it at
-{url}") so they can watch live, then continue. Report every step
-as it happens: POST ${base}/sessions/{session}/events with JSON
+There is no web form. You are the entrypoint. The user's prompt may
+carry a keyphrase (e.g. "Keyphrase: velvet-otter-27") shown on the
+page they have open; that page is polling for this keyphrase and will
+jump to the session by itself. Before anything else, create the
+session: POST ${base}/sessions with JSON
+{"product": "<what the user asked for>", "initiatedBy": "muse-agent",
+ "keyphrase": "<keyphrase from the prompt, if any>"}
+-> {"id": "...", "url": "${base}/s/{id}"}. Do not wait to report back
+before bartering; proceed straight to the steps. The polling page
+finds the session via the keyphrase, and you return the url at the
+end. Report every step as it happens:
+POST ${base}/sessions/{session}/events with JSON
 {"type": "...", ...details}. Types: quote, proof, barter, best, done.
 Include vendor, url and price on quote events so the recap shows sources.
 When you obtain a presentation, store it immediately (not at the end):
@@ -265,9 +299,14 @@ Proof service: ${process.env.LANDING_SIDECAR_URL ?? "http://localhost:8080"}
   ask anyone to trust a price you merely claim.
 
 ## Steps
-0. Session: create it (above) and tell the user the session id and url.
-1. Anchor: find the product online, take the first real price, and prove
-   that response with the sidecar. Store the proof (above) right away.
+0. Session: create it with the prompt's keyphrase (above), then barter.
+1. Anchor: find the product online and prove the first real price you
+   find, wherever you found it — the sidecar proves any public HTTPS
+   host. That first proof is the anchor both vendors derive from.
+   Store the proof (above) right away. Prefer an API-shaped JSON
+   response containing "price" (Shopify stores serve
+   {host}/products/{handle}.json in this shape). If no online price
+   can be proved, say so in an event; never invent an anchor price.
 2. Quote: open a conversation at BOTH vendors with
    {"product": "<typed product>", "presentationB64": "<anchor proof>",
     "sessionId": "<session>"}. Each returns its asking price.
@@ -306,7 +345,9 @@ const STYLE = `
   li{margin:6px 0;line-height:1.5}
 `;
 
-const landingPage = (base, missing = false) => `<!doctype html><meta charset="utf-8">
+const landingPage = (base, missing = false) => {
+  const phrase = genKeyphrase();
+  return `<!doctype html><meta charset="utf-8">
 <title>Barter</title><style>${STYLE}</style>
 <h1>Ask your agent to barter for you.</h1>
 <p class="lede">Your agent finds it online, proves the price with
@@ -315,17 +356,31 @@ install — the agent learns the protocol from this page and starts the
 session itself.</p>
 <div class="say">Say to your agent:<br>
 <strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on …"</strong><br>
-<span class="note">Finish the sentence with whatever you want — deodorant, a laptop, anything. It will give you a session ID to follow here.</span></div>
+<span class="note">Finish the sentence with whatever you want — deodorant, a laptop, anything — and include your keyphrase:</span>
+<pre style="margin:12px 0 0">Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on [your item]. Keyphrase: ${phrase}</pre>
+<button onclick="navigator.clipboard.writeText(document.querySelector('.say pre').textContent)">Copy prompt</button></div>
+<p id="waiting">Waiting for your agent to start… this page jumps to your session on its own. Keyphrase: <code>${phrase}</code></p>
 <form method="get" action="/follow">
-<label for="sid">Started a session? Enter its ID to follow the bartering</label>
-<input id="sid" name="id" required placeholder="e.g. AB12CD" autocomplete="off">
+<label for="phrase">On another device? Enter your keyphrase</label>
+<input id="phrase" name="phrase" required placeholder="e.g. velvet-otter-27" autocomplete="off">
 <button type="submit">Follow session</button>
-${missing ? `<p class="note">That session ID was not found. Check the ID your agent gave you.</p>` : ""}
+${missing ? `<p class="note">That keyphrase was not found yet. Check the phrase in your prompt.</p>` : ""}
 </form>
 <p class="note">Recent sessions: <a href="/panel">control panel</a> ·
 For agents: <a href="/llms.txt">/llms.txt</a></p>
 ${listSessionRecs().slice(-8).reverse().map((s) => `<p><a href="/s/${s.id}">${esc(s.product || "Session")} — ${s.id}</a> <span class="note">${esc(s.status)}${s.best_price != null ? ` · best $${s.best_price}` : ""}</span></p>`).join("")}
-`;
+<script>
+const waiting = document.getElementById('waiting');
+async function poll() {
+  try {
+    const r = await fetch('/api/keyphrase/${phrase}');
+    if (r.ok) { const d = await r.json(); location.href = d.url; return; }
+  } catch {}
+  setTimeout(poll, 2500);
+}
+poll();
+</script>`;
+};
 
 function recapHtml(rec, base) {
   const events = listEvents(rec.id);
@@ -350,7 +405,7 @@ function recapHtml(rec, base) {
 const page = (rec, base) => `<!doctype html><meta charset="utf-8">
 <title>Barter — ${esc(rec.product || rec.id)}</title><style>${STYLE}</style>
 <h1>${esc(rec.product || "Your barter")}</h1>
-<p class="lede">Session ${rec.id} · ${esc(rec.status)}${rec.budget != null ? ` · budget $${rec.budget}` : ""}. Your agent barters live; this page is the record.</p>
+<p class="lede">Session ${rec.id} · ${esc(rec.status)}${rec.budget != null ? ` · budget $${rec.budget}` : ""}${rec.keyphrase ? ` · keyphrase <code>${esc(rec.keyphrase)}</code>` : ""}. Your agent barters live; this page is the record.</p>
 <div class="say">Say to your agent:<br>
 <strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on …"</strong></div>
 <label>Paste this prompt (session ${rec.id})</label>
@@ -507,13 +562,22 @@ export const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/")
       return send(res, 200, landingPage(base, url.searchParams.get("missing") === "1"), "text/html");
     if (req.method === "GET" && url.pathname === "/follow") {
+      const phrase = url.searchParams.get("phrase") ?? "";
+      const byPhrase = phrase ? getSessionByKeyphrase(phrase) : null;
       const id = (url.searchParams.get("id") ?? "").trim().toUpperCase();
-      if (id && getSessionRec(id)) {
-        res.writeHead(303, { Location: `/s/${id}` });
+      const target = byPhrase?.id ?? (id && getSessionRec(id) ? id : null);
+      if (target) {
+        res.writeHead(303, { Location: `/s/${target}` });
         return res.end();
       }
       res.writeHead(303, { Location: "/?missing=1" });
       return res.end();
+    }
+    const km = url.pathname.match(/^\/api\/keyphrase\/(.+)$/);
+    if (req.method === "GET" && km) {
+      const rec = getSessionByKeyphrase(decodeURIComponent(km[1]));
+      if (!rec) return send(res, 404, { error: "no session for that keyphrase yet" });
+      return send(res, 200, { id: rec.id, url: `/s/${rec.id}`, status: rec.status, product: rec.product });
     }
     if (req.method === "POST" && url.pathname === "/sessions") {
       const body = await readBody(req);
@@ -523,9 +587,10 @@ export const server = createServer(async (req, res) => {
         product,
         initiatedBy: body.initiatedBy ? String(body.initiatedBy) : "web",
         budget: body.budget ? Number(body.budget) : null,
+        keyphrase: body.keyphrase ? String(body.keyphrase) : null,
       });
       if ((req.headers["content-type"] ?? "").includes("application/json")) {
-        return send(res, 201, { id: rec.id, url: `${base}/s/${rec.id}` });
+        return send(res, 201, { id: rec.id, url: `${base}/s/${rec.id}`, keyphrase: rec.keyphrase });
       }
       res.writeHead(303, { Location: `/s/${rec.id}` });
       return res.end();

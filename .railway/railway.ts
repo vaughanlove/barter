@@ -46,8 +46,10 @@ export default defineRailway(() => {
       //   openssl rand -hex 32
       // preserve() keeps whatever is already set on the service.
       NOTARY_SIGNING_KEY_HEX: preserve(),
-      TLSN_ALLOWED_HOSTS: "basecamp.barter.computer,ridgeline.barter.computer,example.com",
-      TLSN_MAX_RECV_DATA: "16384",
+      // No TLSN_ALLOWED_HOSTS: the sidecar proves any public HTTPS host
+      // (SSRF guards in the sidecar still refuse non-public addresses).
+      // The vendors anchor to the first proof the agent generates.
+      TLSN_MAX_RECV_DATA: "65536",
     },
   });
 

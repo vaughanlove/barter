@@ -20,9 +20,11 @@ all four domains ACTIVE with valid certs, deployments SUCCESS, and
 endpoints verified live:
 
 - https://barter.computer — landing page (no form: the Muse agent is
-  the entrypoint and creates the persisted session; homepage follows a
-  session by ID + lists recent sessions), `/llms.txt` (session creation,
-  two vendors, proof-anchored mirror flow), `/panel` (control
+  the entrypoint; homepage issues a mnemonic keyphrase for the prompt,
+  polls for it, and auto-redirects to the session the agent creates
+  with that keyphrase; manual keyphrase entry + recent sessions too),
+  `/llms.txt` (session creation with keyphrase, two vendors,
+  proof-anchored mirror flow), `/panel` (control
   panel, light mode, per-session OTEL log viewer). `/llms.txt` teaches the
   protocol; a user verbally tells Muse "go to barter.computer".
 - https://prove.barter.computer — TLSNotary sidecar. `/health`, `/pubkey`
@@ -72,6 +74,12 @@ OTEL logs appearing in the landing control panel (`/api/sessions`).
   env-only and never exposed via API.
 
 ## Known issues / gotchas
+
+- The sidecar proves any public HTTPS host (no `TLSN_ALLOWED_HOSTS`):
+  the vendors anchor to the first proof the agent generates, so the
+  allowlist must not fence the agent into vendor hosts. SSRF guards
+  (public-IP only, path/header rules, serialized proves) remain the
+  boundary. Deliberate demo tradeoff, per Vaughan.
 
 - `/llms.txt` renders the session base URL from the Host header, so behind
   Railway it can say `http://barter.computer` instead of https. Fix with

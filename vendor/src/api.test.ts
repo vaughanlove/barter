@@ -68,7 +68,9 @@ beforeAll(async () => {
           res.end(JSON.stringify(body));
         }
       };
-      if (presentationB64?.startsWith("price-")) {
+      if (presentationB64 === "quoted-low") {
+        send({ valid: true, received: '{"product":{"variants":[{"price":"65.00"}]}}' });
+      } else if (presentationB64?.startsWith("price-")) {
         send({ valid: true, received: `{"price": ${presentationB64.slice(6)}}` });
       } else if (presentationB64 === "valid-low") {
         send({ valid: true, received: 'HTTP/1.1 200 OK\r\n\r\n{"price": 65}' });
@@ -195,6 +197,16 @@ describe("proof-gated barter", () => {
     expect(result.body).toMatchObject({
       type: "rejected",
       data: { price: 76, reason: "proof did not verify" },
+    });
+  });
+
+  it("reads a quoted string price from the verified transcript (Shopify shape)", async () => {
+    const id = await createConversation();
+
+    const conceded = await barter(id, "quoted-low");
+    expect(conceded.body).toMatchObject({
+      type: "offer",
+      data: { price: 62, floorReached: false },
     });
   });
 

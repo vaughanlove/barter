@@ -96,7 +96,7 @@ function emit(
 function attestedPrice(verified: Record<string, unknown>): number | null {
   const received = typeof verified.received === "string" ? verified.received : "";
   const match =
-    received.match(/"price"\s*:\s*([0-9]+(?:\.[0-9]+)?)/) ??
+    received.match(/"price"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?/) ??
     received.match(/\$\s*([0-9]+(?:\.[0-9]+)?)/);
   return match ? Number(match[1]) : null;
 }

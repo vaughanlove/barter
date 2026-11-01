@@ -50,19 +50,31 @@ test("typed product creates a persisted session with a recap", async () => {
   assert.ok(mine.logs.some((l) => l.event === "quote"));
 });
 
-test("landing has no creation form; it follows agent-started sessions", async () => {
+test("landing issues a keyphrase, polls for it, and follows it", async () => {
   const home = await (await fetch(`${base}/`)).text();
-  assert.match(home, /Started a session\? Enter its ID/);
   assert.match(home, /find me the best price on/);
-  assert.match(home, /name="id"/);
+  assert.match(home, /Keyphrase: [a-z]+-[a-z]+-[a-z]+-\d\d/);
+  assert.match(home, /\/api\/keyphrase\//);
+  assert.match(home, /name="phrase"/);
   assert.ok(!home.includes('name="product"'), "homepage must not create sessions");
 
-  const created = await post("/sessions", { product: "Trail Shoes", initiatedBy: "muse-agent" });
-  const { id } = await created.json();
-  const followed = await fetch(`${base}/follow?id=${id.toLowerCase()}`, { redirect: "manual" });
+  const created = await post("/sessions", {
+    product: "Trail Shoes",
+    initiatedBy: "muse-agent",
+    keyphrase: "Velvet Otter 27",
+  });
+  const { id, keyphrase } = await created.json();
+  assert.equal(keyphrase, "velvet-otter-27");
+
+  const found = await fetch(`${base}/api/keyphrase/velvet-otter-27`);
+  assert.equal(found.status, 200);
+  assert.equal((await found.json()).id, id);
+  assert.equal((await fetch(`${base}/api/keyphrase/nope-nope-99`)).status, 404);
+
+  const followed = await fetch(`${base}/follow?phrase=velvet-otter-27`, { redirect: "manual" });
   assert.equal(followed.status, 303);
   assert.equal(followed.headers.get("location"), `/s/${id}`);
-  const missed = await fetch(`${base}/follow?id=ZZZZZZ`, { redirect: "manual" });
+  const missed = await fetch(`${base}/follow?phrase=nope-nope-99`, { redirect: "manual" });
   assert.equal(missed.headers.get("location"), "/?missing=1");
 });
 
