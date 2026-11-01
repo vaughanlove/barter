@@ -314,8 +314,8 @@ TLSNotary, and barters two vendors down against each other. No app to
 install — the agent learns the protocol from this page and starts the
 session itself.</p>
 <div class="say">Say to your agent:<br>
-<strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me a deal."</strong><br>
-<span class="note">It will give you a session ID to follow here.</span></div>
+<strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on …"</strong><br>
+<span class="note">Finish the sentence with whatever you want — deodorant, a laptop, anything. It will give you a session ID to follow here.</span></div>
 <form method="get" action="/follow">
 <label for="sid">Started a session? Enter its ID to follow the bartering</label>
 <input id="sid" name="id" required placeholder="e.g. AB12CD" autocomplete="off">
@@ -352,7 +352,7 @@ const page = (rec, base) => `<!doctype html><meta charset="utf-8">
 <h1>${esc(rec.product || "Your barter")}</h1>
 <p class="lede">Session ${rec.id} · ${esc(rec.status)}${rec.budget != null ? ` · budget $${rec.budget}` : ""}. Your agent barters live; this page is the record.</p>
 <div class="say">Say to your agent:<br>
-<strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me a deal."</strong></div>
+<strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on …"</strong></div>
 <label>Paste this prompt (session ${rec.id})</label>
 <pre id="prompt">Use ${base}/llms.txt to find the best deal for "${esc(rec.product)}"${rec.budget != null ? ` under $${rec.budget}` : ""}. Session: ${rec.id} (use this session; do not create another). Follow the barter protocol there, report every step using the event endpoints in llms.txt, store each proof when you obtain it, and show me the best offer before buying anything. Return ${base}/s/${rec.id} when done.</pre>
 <button onclick="navigator.clipboard.writeText(document.getElementById('prompt').textContent)">Copy prompt</button>

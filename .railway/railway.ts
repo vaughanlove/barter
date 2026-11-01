@@ -27,7 +27,7 @@ export default defineRailway(() => {
     healthcheck: "/panel",
     domains: ["barter.computer"],
     volumeMounts: {
-      "/data": volume("landing-data", { sizeMB: 1024 }),
+      "/data": volume("landing-data", { sizeMB: 1024, region: "us-west2" }),
     },
     env: {
       LANDING_VENDOR_URL: VENDOR_A,

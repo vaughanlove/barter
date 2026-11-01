@@ -53,6 +53,7 @@ test("typed product creates a persisted session with a recap", async () => {
 test("landing has no creation form; it follows agent-started sessions", async () => {
   const home = await (await fetch(`${base}/`)).text();
   assert.match(home, /Started a session\? Enter its ID/);
+  assert.match(home, /find me the best price on/);
   assert.match(home, /name="id"/);
   assert.ok(!home.includes('name="product"'), "homepage must not create sessions");
 
