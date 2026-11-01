@@ -66,19 +66,22 @@ const KEYWORDS = [
   "reed", "ridge", "river", "sable", "saffron", "salmon", "sand", "sorrel",
   "spruce", "summit", "tide", "topaz", "tulip", "velvet", "willow", "zephyr",
 ];
+// Canonical form: the spoken words, space-joined. Any separator the
+// agent or user types (hyphens, commas, capitals, stray numbers) folds
+// to the same phrase, so "velvet-otter-27" still finds the session.
 export const normalizeKeyphrase = (s) =>
-  String(s ?? "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  String(s ?? "").toLowerCase().replace(/[^a-z]+/g, " ").trim().replace(/\s+/g, " ");
 export const genKeyphrase = () => {
   const pick = () => KEYWORDS[randomBytes(1)[0] % KEYWORDS.length];
-  return `${pick()}-${pick()}-${pick()}-${10 + (randomBytes(1)[0] % 90)}`;
+  return `${pick()} ${pick()} ${pick()}`;
 };
 function getSessionByKeyphrase(phrase) {
   const kp = normalizeKeyphrase(phrase);
   if (!kp) return null;
-  if (db) {
-    return db.prepare("SELECT * FROM sessions WHERE keyphrase=? ORDER BY created_at DESC").get(kp) ?? null;
-  }
-  return [...jsonStore.sessions].reverse().find((s) => s.keyphrase === kp) ?? null;
+  return (
+    [...listSessionRecs()].reverse().find((s) => s.keyphrase && normalizeKeyphrase(s.keyphrase) === kp) ??
+    null
+  );
 }
 
 function createSessionRec({ product, initiatedBy, budget, keyphrase }) {
@@ -261,18 +264,25 @@ You are the user's personal shopping agent. Find the best deal by bartering
 with vendor agents, using TLSNotary proofs as leverage. Work signed-out.
 
 ## Session (you start it; watch-along + record)
-There is no web form. You are the entrypoint. The user's prompt may
-carry a keyphrase (e.g. "Keyphrase: velvet-otter-27") shown on the
-page they have open; that page is polling for this keyphrase and will
-jump to the session by itself. Before anything else, create the
-session: POST ${base}/sessions with JSON
+There is no web form. You are the entrypoint. The user's prompt ends
+with a line in exactly this shape:
+
+Keyphrase: <three lowercase words separated by spaces>
+
+Example prompt ending: "Keyphrase: velvet otter meadow". That page is
+open in the user's browser, polling for this keyphrase, and jumps to
+the session by itself — but only if you pass the keyphrase through
+exactly. REQUIRED: copy the three words, in order, unchanged, into
+the "keyphrase" field of your session-creation call. Do not hyphenate
+them, add numbers, or invent a different phrase. Before anything
+else, create the session: POST ${base}/sessions with JSON
 {"product": "<what the user asked for>", "initiatedBy": "muse-agent",
- "keyphrase": "<keyphrase from the prompt, if any>"}
--> {"id": "...", "url": "${base}/s/{id}"}. Do not wait to report back
-before bartering; proceed straight to the steps. The polling page
-finds the session via the keyphrase, and you return the url at the
-end. Report every step as it happens:
-POST ${base}/sessions/{session}/events with JSON
+ "keyphrase": "velvet otter meadow"}
+-> {"id": "...", "url": "${base}/s/{id}", "keyphrase": "..."}. Check
+the response echoes the same keyphrase; if it does not, your session
+will not be found. Then proceed straight to the steps without waiting
+to report back; you return the url at the end. Report every step as
+it happens: POST ${base}/sessions/{session}/events with JSON
 {"type": "...", ...details}. Types: quote, proof, barter, best, done.
 Include vendor, url and price on quote events so the recap shows sources.
 When you obtain a presentation, store it immediately (not at the end):
@@ -362,7 +372,7 @@ session itself.</p>
 <p id="waiting">Waiting for your agent to start… this page jumps to your session on its own. Keyphrase: <code>${phrase}</code></p>
 <form method="get" action="/follow">
 <label for="phrase">On another device? Enter your keyphrase</label>
-<input id="phrase" name="phrase" required placeholder="e.g. velvet-otter-27" autocomplete="off">
+<input id="phrase" name="phrase" required placeholder="e.g. velvet otter meadow" autocomplete="off">
 <button type="submit">Follow session</button>
 ${missing ? `<p class="note">That keyphrase was not found yet. Check the phrase in your prompt.</p>` : ""}
 </form>
@@ -373,7 +383,7 @@ ${listSessionRecs().slice(-8).reverse().map((s) => `<p><a href="/s/${s.id}">${es
 const waiting = document.getElementById('waiting');
 async function poll() {
   try {
-    const r = await fetch('/api/keyphrase/${phrase}');
+    const r = await fetch('/api/keyphrase/' + encodeURIComponent('${phrase}'));
     if (r.ok) { const d = await r.json(); location.href = d.url; return; }
   } catch {}
   setTimeout(poll, 2500);

@@ -53,7 +53,8 @@ test("typed product creates a persisted session with a recap", async () => {
 test("landing issues a keyphrase, polls for it, and follows it", async () => {
   const home = await (await fetch(`${base}/`)).text();
   assert.match(home, /find me the best price on/);
-  assert.match(home, /Keyphrase: [a-z]+-[a-z]+-[a-z]+-\d\d/);
+  assert.match(home, /Keyphrase: [a-z]+ [a-z]+ [a-z]+/);
+  assert.ok(!/Keyphrase: [a-z]+-/.test(home), "keyphrase must be spoken words, no hyphens");
   assert.match(home, /\/api\/keyphrase\//);
   assert.match(home, /name="phrase"/);
   assert.ok(!home.includes('name="product"'), "homepage must not create sessions");
@@ -61,20 +62,22 @@ test("landing issues a keyphrase, polls for it, and follows it", async () => {
   const created = await post("/sessions", {
     product: "Trail Shoes",
     initiatedBy: "muse-agent",
-    keyphrase: "Velvet Otter 27",
+    keyphrase: "velvet otter meadow",
   });
   const { id, keyphrase } = await created.json();
-  assert.equal(keyphrase, "velvet-otter-27");
+  assert.equal(keyphrase, "velvet otter meadow");
 
-  const found = await fetch(`${base}/api/keyphrase/velvet-otter-27`);
+  const found = await fetch(`${base}/api/keyphrase/velvet%20otter%20meadow`);
   assert.equal(found.status, 200);
   assert.equal((await found.json()).id, id);
-  assert.equal((await fetch(`${base}/api/keyphrase/nope-nope-99`)).status, 404);
+  // However the agent mangles separators, the same session is found.
+  assert.equal((await fetch(`${base}/api/keyphrase/VELVET-Otter, meadow 27`)).status, 200);
+  assert.equal((await fetch(`${base}/api/keyphrase/nope nope nope`)).status, 404);
 
-  const followed = await fetch(`${base}/follow?phrase=velvet-otter-27`, { redirect: "manual" });
+  const followed = await fetch(`${base}/follow?phrase=velvet otter meadow`, { redirect: "manual" });
   assert.equal(followed.status, 303);
   assert.equal(followed.headers.get("location"), `/s/${id}`);
-  const missed = await fetch(`${base}/follow?phrase=nope-nope-99`, { redirect: "manual" });
+  const missed = await fetch(`${base}/follow?phrase=nope nope nope`, { redirect: "manual" });
   assert.equal(missed.headers.get("location"), "/?missing=1");
 });
 
