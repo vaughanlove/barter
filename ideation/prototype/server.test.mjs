@@ -1,0 +1,62 @@
+import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test, { after } from "node:test";
+
+const dir = mkdtempSync(join(tmpdir(), "barter-landing-"));
+process.env.BARTER_DB_PATH = join(dir, "barter.db");
+process.env.NO_PROXY = "127.0.0.1,localhost";
+process.env.no_proxy = process.env.NO_PROXY;
+
+const { server } = await import("./server.mjs");
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const base = `http://127.0.0.1:${server.address().port}`;
+after(() => server.close());
+
+const post = (path, body) =>
+  fetch(`${base}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+test("typed product creates a persisted session with a recap", async () => {
+  const created = await post("/sessions", { product: "Deodorant", budget: 25 });
+  assert.equal(created.status, 201);
+  const { id } = await created.json();
+
+  assert.equal((await post(`/sessions/${id}/events`, { type: "quote", vendor: "Ridgeline Outfitters", url: "https://ridgeline.example", price: 20.4 })).status, 201);
+  const proof = await post(`/sessions/${id}/proofs`, {
+    presentationB64: "aGVsbG8td29ybGQ=",
+    host: "www.target.com",
+    path: "/p/deodorant",
+    attestedPrice: 20,
+  });
+  assert.equal(proof.status, 201);
+  assert.equal((await post(`/sessions/${id}/events`, { type: "best", price: 19.37, vendor: "Ridgeline Outfitters" })).status, 201);
+  assert.equal((await post(`/sessions/${id}/events`, { type: "done", needsApproval: true })).status, 201);
+
+  const html = await (await fetch(`${base}/s/${id}`)).text();
+  assert.match(html, /Deodorant/);
+  assert.match(html, /\$19\.37/);
+  assert.match(html, /presented/);
+  assert.match(html, /www\.target\.com/);
+  assert.match(html, /Ridgeline Outfitters/);
+
+  const listed = await (await fetch(`${base}/api/sessions`)).json();
+  const mine = listed.sessions.find((s) => s.id === id);
+  assert.equal(mine.status, "done");
+  assert.ok(mine.logs.some((l) => l.event === "quote"));
+});
+
+test("landing renders the input form, and products are escaped", async () => {
+  const home = await (await fetch(`${base}/`)).text();
+  assert.match(home, /name="product"/);
+  assert.match(home, /Start bartering/);
+
+  const created = await post("/sessions", { product: '"><script>alert(1)</script>' });
+  const { id } = await created.json();
+  const html = await (await fetch(`${base}/s/${id}`)).text();
+  assert.ok(!html.includes("<script>alert(1)</script>"));
+});

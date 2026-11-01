@@ -28,7 +28,7 @@ Modeled on [Cliffside Retail](https://www.cliffside-retail.com/developers), the 
 
 `src/inventory.ts` — a simplified vendor inventory: one demo SKU, asking price from `VENDOR_PRICE`.
 
-`src/discount_policy.ts` — proof-gated discounts: concede only when a TLSNotary presentation verifies _and_ attests a lower price; never below `VENDOR_FLOOR`.
+`src/discount_policy.ts` — proof-gated discounts: concede only when a TLSNotary presentation verifies _and_ attests a lower price; never below the floor. Anchored mode: `POST /poppy/conversations {product, presentationB64}` derives ask/floor from the attested anchor (`VENDOR_MARKUP_PCT`, `VENDOR_FLOOR_PCT`) and beats rivals per `VENDOR_UNDERCUT_MODE` (`penny` = $0.01, `percent` = `VENDOR_UNDERCUT_PCT`%).
 
 `src/telemetry.ts` — OpenTelemetry-shaped log emission for every event (`vendor.conversation.created`, `vendor.quote.issued`, `vendor.proof.received/verified/rejected`, `vendor.offer.countered/held/floor`). Each event is printed as one JSON line on stdout and, if `OTEL_EXPORTER_OTLP_ENDPOINT` is set, POSTed as OTLP/HTTP JSON to `{endpoint}/v1/logs` — feed either stream into the demo control panel.
 

@@ -6,42 +6,47 @@
 // Docs: https://docs.railway.com/infrastructure-as-code
 //
 // Topology:
-//   barter.vaughan.love     -> landing  (landing page, /llms.txt, control panel)
-//   prove.vaughan.love      -> prove    (TLSNotary sidecar)
-//   basecamp.vaughan.love   -> vendor-basecamp   (dummy vendor, barter target)
-//   ridgeline.vaughan.love  -> vendor-ridgeline  (dummy vendor, lowest quote)
+//   barter.computer              -> landing  (landing page, /llms.txt, control panel)
+//   prove.barter.computer        -> prove    (TLSNotary sidecar)
+//   basecamp.barter.computer     -> vendor-basecamp   (dummy vendor, barter target)
+//   ridgeline.barter.computer    -> vendor-ridgeline  (dummy vendor, lowest quote)
 // The Muse agent (on-device) is the orchestrator and is not deployed here.
 
-import { defineRailway, github, preserve, project, service } from "railway/iac";
+import { defineRailway, github, preserve, project, service, volume } from "railway/iac";
 
 const REPO = "vaughanlove/barter";
-const LANDING = "https://barter.vaughan.love";
-const PROVE = "https://prove.vaughan.love";
-const VENDOR_A = "https://basecamp.vaughan.love";
-const VENDOR_B = "https://ridgeline.vaughan.love";
+const LANDING = "https://barter.computer";
+const PROVE = "https://prove.barter.computer";
+const VENDOR_A = "https://basecamp.barter.computer";
+const VENDOR_B = "https://ridgeline.barter.computer";
 
 export default defineRailway(() => {
   const landing = service("landing", {
     source: github(REPO, { rootDirectory: "ideation/prototype" }),
     start: "node server.mjs",
     healthcheck: "/panel",
-    domains: ["barter.vaughan.love"],
+    domains: ["barter.computer"],
+    volumeMounts: {
+      "/data": volume("landing-data", { sizeMB: 1024 }),
+    },
     env: {
       LANDING_VENDOR_URL: VENDOR_A,
+      LANDING_VENDOR_URL_B: VENDOR_B,
       LANDING_SIDECAR_URL: PROVE,
+      BARTER_DB_PATH: "/data/barter.db",
     },
   });
 
   const prove = service("prove", {
     source: github(REPO, { rootDirectory: "tlsn-sidecar" }),
     healthcheck: "/health",
-    domains: ["prove.vaughan.love"],
+    domains: ["prove.barter.computer"],
     env: {
       // Set the real value in Railway once (or before first apply):
       //   openssl rand -hex 32
       // preserve() keeps whatever is already set on the service.
       NOTARY_SIGNING_KEY_HEX: preserve(),
-      TLSN_ALLOWED_HOSTS: "basecamp.vaughan.love,ridgeline.vaughan.love,example.com",
+      TLSN_ALLOWED_HOSTS: "basecamp.barter.computer,ridgeline.barter.computer,example.com",
       TLSN_MAX_RECV_DATA: "16384",
     },
   });
@@ -51,12 +56,15 @@ export default defineRailway(() => {
     build: "pnpm build",
     start: "pnpm preview --host 0.0.0.0 --port $PORT",
     healthcheck: "/health",
-    domains: ["basecamp.vaughan.love"],
+    domains: ["basecamp.barter.computer"],
     env: {
       VENDOR_NAME: "Basecamp Supply",
       VENDOR_PRICE: "84",
       VENDOR_FLOOR: "68",
       VENDOR_UNDERCUT: "3",
+      VENDOR_MARKUP_PCT: "5",
+      VENDOR_FLOOR_PCT: "8",
+      VENDOR_UNDERCUT_MODE: "penny",
       VERIFIER_URL: `${PROVE}/verify`,
       VERIFIER_TIMEOUT_MS: "10000",
       OTEL_EXPORTER_OTLP_ENDPOINT: LANDING,
@@ -68,12 +76,16 @@ export default defineRailway(() => {
     build: "pnpm build",
     start: "pnpm preview --host 0.0.0.0 --port $PORT",
     healthcheck: "/health",
-    domains: ["ridgeline.vaughan.love"],
+    domains: ["ridgeline.barter.computer"],
     env: {
       VENDOR_NAME: "Ridgeline Outfitters",
       VENDOR_PRICE: "72",
       VENDOR_FLOOR: "64",
       VENDOR_UNDERCUT: "3",
+      VENDOR_MARKUP_PCT: "2",
+      VENDOR_FLOOR_PCT: "12",
+      VENDOR_UNDERCUT_MODE: "percent",
+      VENDOR_UNDERCUT_PCT: "5",
       VERIFIER_URL: `${PROVE}/verify`,
       VERIFIER_TIMEOUT_MS: "10000",
       OTEL_EXPORTER_OTLP_ENDPOINT: LANDING,

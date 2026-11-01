@@ -68,7 +68,9 @@ beforeAll(async () => {
           res.end(JSON.stringify(body));
         }
       };
-      if (presentationB64 === "valid-low") {
+      if (presentationB64?.startsWith("price-")) {
+        send({ valid: true, received: `{"price": ${presentationB64.slice(6)}}` });
+      } else if (presentationB64 === "valid-low") {
         send({ valid: true, received: 'HTTP/1.1 200 OK\r\n\r\n{"price": 65}' });
       } else if (presentationB64 === "valid-floor") {
         send({ valid: true, received: 'HTTP/1.1 200 OK\r\n\r\n{"price": 10}' });
@@ -116,6 +118,42 @@ describe("discovery", () => {
     expect(body.organization).toMatchObject({ domain: host });
     const agent = body.agent as { protocols: { endpoint: string }[] };
     expect(agent.protocols[0].endpoint).toBe(`http://${host}/poppy/conversations`);
+  });
+});
+
+describe("proof-anchored mirror pricing", () => {
+  async function anchored(): Promise<string> {
+    process.env.VENDOR_MARKUP_PCT = "5";
+    process.env.VENDOR_FLOOR_PCT = "8";
+    process.env.VENDOR_UNDERCUT_MODE = "penny";
+    const created = await postJson("/poppy/conversations", {
+      product: "Deodorant",
+      presentationB64: "price-20",
+    });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ product: "Deodorant", sku: "deodorant" });
+    expect(created.body.quote).toMatchObject({ price: 21 });
+    return String(created.body.id);
+  }
+
+  it("derives the ask from the attested anchor price", async () => {
+    await anchored();
+  });
+
+  it("beats a verified rival by a penny, then stops at its floor", async () => {
+    const id = await anchored();
+
+    const beaten = await barter(id, "price-20.4");
+    expect(beaten.body).toMatchObject({
+      type: "offer",
+      data: { price: 20.39, floorReached: false },
+    });
+
+    const floored = await barter(id, "price-10");
+    expect(floored.body).toMatchObject({
+      type: "offer",
+      data: { price: 18.4, floorReached: true },
+    });
   });
 });
 

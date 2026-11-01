@@ -1,4 +1,5 @@
 .env
+ideation/prototype/data/
 node_modules/
 node_modules
 dist

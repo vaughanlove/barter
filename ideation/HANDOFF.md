@@ -12,19 +12,24 @@ Cliffside Retail, PAP 0.3), using TLSNotary presentations as leverage. Vendor
 agents verify proofs themselves, trustlessly, and only concede on a verified
 lower price. No barter server in the middle; `llms.txt` teaches the protocol.
 
-## Live system (verified 2026-10-31)
+## Live system (verified 2026-11-01 on barter.computer)
 
-All four Railway services are SUCCESS and answering:
+Domain switched to `barter.computer` (Cloudflare DNS, replaces
+vaughan.love outright; old domains deleted from Railway). Config applied,
+all four domains ACTIVE with valid certs, deployments SUCCESS, and
+endpoints verified live:
 
-- https://barter.vaughan.love — landing page, `/llms.txt`, `/panel` (control
+- https://barter.computer — landing page (free-text product form ->
+  persisted session), `/llms.txt` (two vendors, proof-anchored mirror
+  flow), `/panel` (control
   panel, light mode, per-session OTEL log viewer). `/llms.txt` teaches the
-  protocol; a user verbally tells Muse "go to barter.vaughan.love".
-- https://prove.vaughan.love — TLSNotary sidecar. `/health`, `/pubkey`
+  protocol; a user verbally tells Muse "go to barter.computer".
+- https://prove.barter.computer — TLSNotary sidecar. `/health`, `/pubkey`
   (fingerprint `118a8b67111c929a`, keyMode persistent), `POST /prove`,
   `POST /verify`.
-- https://basecamp.vaughan.love — dummy vendor "Basecamp Supply"
+- https://basecamp.barter.computer — dummy vendor "Basecamp Supply"
   ($84 ask / $68 floor, barter target).
-- https://ridgeline.vaughan.love — dummy vendor "Ridgeline Outfitters"
+- https://ridgeline.barter.computer — dummy vendor "Ridgeline Outfitters"
   ($72 ask / $64 floor, lowest quote).
 
 Verified end-to-end today: vendor discovery (per-instance poppy.json),
@@ -68,7 +73,7 @@ OTEL logs appearing in the landing control panel (`/api/sessions`).
 ## Known issues / gotchas
 
 - `/llms.txt` renders the session base URL from the Host header, so behind
-  Railway it can say `http://barter.vaughan.love` instead of https. Fix with
+  Railway it can say `http://barter.computer` instead of https. Fix with
   `x-forwarded-proto` if it matters for the agent run.
 - The sidecar's prover and notary share one process: attestation mechanics
   are real, but a verifier must trust this deployment not to collude with
@@ -116,11 +121,14 @@ OTEL logs appearing in the landing control panel (`/api/sessions`).
    public profile (e.g. "up to 15% with verified proof, coupons available")
    while keeping exact floors/costs private. Wire each knob to env per
    Railway vendor service so the two dummies negotiate visibly differently.
-5. **Unique domain (voice-dictation problem).** `vaughan` mis-transcribes
-   when voice-dictated, so a unique domain is probably needed after all.
-   Leading candidate: **provablybarter.com** ("Barter, provably.") with
-   barterproof.com as the mishearing redirect. Availability/trademark NOT
-   checked. Related investigation: whether a QR code can open the Muse app
+5. **Unique domain (voice-dictation problem) — DONE (2026-11-01).**
+   `vaughan` mis-transcribed when voice-dictated. Vaughan purchased
+   **barter.computer** (Cloudflare): landing at the apex, services at
+   `prove`/`basecamp`/`ridgeline.barter.computer`, vaughan.love removed.
+   Note: Cloudflare records are proxied (orange-cloud); set SSL mode to
+   Full (Strict) and consider DNS-only if Railway routing misbehaves.
+   Related investigation:
+   whether a QR code can open the Muse app
    with a hydrated prompt. Findings so far: Muse's AASA claims
    `muse.ai/chat`, `/chat/*`, `/thread/*` universal links (so opening the app
    via link likely works), but NO public evidence it reads `?prompt=`/`?q=`/
@@ -129,7 +137,7 @@ OTEL logs appearing in the landing control panel (`/api/sessions`).
 
 ## Demo line to protect
 
-"Go to barter.vaughan.love and find me a deal." — one sentence, Muse reads
+"Go to barter.computer and find me a deal." — one sentence, Muse reads
 `llms.txt`, quotes -> proof -> barter (max 3 rounds) -> best offer -> user
 approves. Never buy before approval. Rehearse the degrade path (cached
 prices, simulated providers) so a vendor fetch failure is invisible.

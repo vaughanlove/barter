@@ -15,7 +15,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { decide } from "./discount_policy.ts";
+import { anchoredAsk, anchoredFloor, beat, decide } from "./discount_policy.ts";
 import { DEMO_SKU, getProduct, listProducts } from "./inventory.ts";
 
 const OPENAPI = {
@@ -37,8 +37,19 @@ interface Conversation {
   id: string;
   sku: string;
   price: number;
+  product?: string;
+  anchor?: number;
+  floorPrice?: number;
+  sessionId?: string;
   events: Record<string, unknown>[];
 }
+
+const slugify = (s: string): string =>
+  s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "item";
 
 const conversations = new Map<string, Conversation>();
 const verifierUrl = (process.env.VERIFIER_URL ?? "http://localhost:8080/verify").replace(/\/$/, "");
@@ -72,7 +83,12 @@ function emit(
     ...attrs,
   };
   conv.events.push(record);
-  log(event, { conversationId: conv.id, sku: conv.sku, ...attrs });
+  log(event, {
+    conversationId: conv.id,
+    sku: conv.sku,
+    ...(conv.sessionId ? { sessionId: conv.sessionId } : {}),
+    ...attrs,
+  });
 }
 
 // Extract the attested price from the *verified* transcript text. The price
@@ -165,6 +181,40 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
 
     if (req.method === "POST" && path === "/poppy/conversations") {
       const body = await readJson(req);
+      const productName = typeof body.product === "string" ? body.product.trim() : "";
+      const sessionId = typeof body.sessionId === "string" ? body.sessionId : undefined;
+      const anchorB64 = typeof body.presentationB64 === "string" ? body.presentationB64 : "";
+      // Proof-anchored mirror: a verified online price for the typed
+      // product sets this vendor's ask and hidden floor. No anchor proof,
+      // no mirrored quote — fall through to the legacy catalog quote.
+      if (productName && anchorB64) {
+        const { valid, price: anchor } = await verifyPresentation(anchorB64);
+        if (!valid || anchor === null) {
+          send(res, 422, { error: "anchor proof did not verify" });
+          return true;
+        }
+        const conv: Conversation = {
+          id: randomBytes(4).toString("hex"),
+          sku: slugify(productName),
+          product: productName,
+          anchor,
+          floorPrice: anchoredFloor(anchor),
+          price: anchoredAsk(anchor),
+          sessionId,
+          events: [],
+        };
+        conversations.set(conv.id, conv);
+        emit(conv, "vendor.conversation.created", { price: conv.price, anchor });
+        emit(conv, "vendor.quote.issued", { price: conv.price, anchor });
+        send(res, 201, {
+          id: conv.id,
+          vendor: vendorName,
+          sku: conv.sku,
+          product: conv.product,
+          quote: { price: conv.price, currency: "USD" },
+        });
+        return true;
+      }
       const sku = typeof body.sku === "string" ? body.sku : DEMO_SKU;
       const product = getProduct(sku);
       if (!product) {
@@ -175,6 +225,7 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
         id: randomBytes(4).toString("hex"),
         sku,
         price: product.price,
+        sessionId,
         events: [],
       };
       conversations.set(conv.id, conv);
@@ -230,7 +281,10 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
           return true;
         }
         emit(conv, "vendor.proof.verified", { price: conv.price, attestedPrice: attested });
-        const decision = decide(conv.price, attested);
+        const decision =
+          conv.floorPrice !== undefined
+            ? beat(conv.price, attested, conv.floorPrice)
+            : decide(conv.price, attested);
         if (decision.action === "reject") {
           emit(conv, "vendor.offer.held", { price: conv.price, attestedPrice: attested });
           send(res, 200, { type: "offer", data: { price: conv.price, note: decision.reason } });

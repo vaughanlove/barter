@@ -50,17 +50,17 @@ sequenceDiagram
     MUSE-->>User: Confirmed (purchase simulated)
 ```
 
-## Deployment (Railway IaC, vaughan.love subdomains)
+## Deployment (Railway IaC, barter.computer)
 
 Defined in [`.railway/railway.ts`](../../.railway/railway.ts); see
 [`.railway/README.md`](../../.railway/README.md) for plan/apply + DNS.
 
 | Domain | Service | Role |
 |---|---|---|
-| barter.vaughan.love | `landing` | Landing page, `/llms.txt`, control panel |
-| prove.vaughan.love | `prove` | TLSNotary sidecar |
-| basecamp.vaughan.love | `vendor-basecamp` | Dummy vendor (barter target, $84/$68) |
-| ridgeline.vaughan.love | `vendor-ridgeline` | Dummy vendor (lowest quote, $72/$64) |
+| barter.computer | `landing` | Landing page, `/llms.txt`, control panel |
+| prove.barter.computer | `prove` | TLSNotary sidecar |
+| basecamp.barter.computer | `vendor-basecamp` | Dummy vendor (barter target, $84/$68) |
+| ridgeline.barter.computer | `vendor-ridgeline` | Dummy vendor (lowest quote, $72/$64) |
 
 The Muse agent (on-device) is the orchestrator and is not deployed.
 

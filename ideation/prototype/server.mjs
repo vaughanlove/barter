@@ -11,20 +11,154 @@
  */
 import { createServer } from "node:http";
 import { createHash, randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const port = Number(process.env.PORT ?? 8899);
 const sessions = new Map(); // id -> { events: [], clients: Set<res> }
 
-const newSession = () => {
-  const id = randomBytes(3).toString("hex").toUpperCase();
-  sessions.set(id, { events: [], clients: new Set() });
-  return id;
+// --- Persistent store ------------------------------------------------------
+// SQLite when available (Node >= 22, node:sqlite), JSON file otherwise.
+// Path from BARTER_DB_PATH; on Railway this points at the mounted volume
+// (/data/barter.db) so sessions/proofs survive redeploys.
+const DB_PATH =
+  process.env.BARTER_DB_PATH ?? fileURLToPath(new URL("./data/barter.db", import.meta.url));
+mkdirSync(dirname(DB_PATH), { recursive: true });
+let db = null;
+try {
+  const { DatabaseSync } = await import("node:sqlite");
+  db = new DatabaseSync(DB_PATH);
+  db.exec(`CREATE TABLE IF NOT EXISTS sessions(
+    id TEXT PRIMARY KEY, product TEXT, initiated_by TEXT, budget REAL,
+    status TEXT, best_price REAL, best_vendor TEXT, created_at TEXT, updated_at TEXT);
+    CREATE TABLE IF NOT EXISTS events(
+    session_id TEXT, ts TEXT, type TEXT, payload TEXT);
+    CREATE TABLE IF NOT EXISTS proofs(
+    session_id TEXT, hash TEXT, host TEXT, path TEXT, attested_price REAL,
+    presentation TEXT, verdict TEXT, created_at TEXT,
+    PRIMARY KEY(session_id, hash));`);
+} catch {
+  db = null; // JSON fallback below
+}
+const jsonPath = `${DB_PATH}.json`;
+let jsonStore = { sessions: [], events: [], proofs: [] };
+if (!db) {
+  try {
+    jsonStore = JSON.parse(readFileSync(jsonPath, "utf8"));
+  } catch { /* fresh store */ }
+}
+const saveJson = () => {
+  if (!db) writeFileSync(jsonPath, JSON.stringify(jsonStore));
 };
+const now = () => new Date().toISOString();
+
+function createSessionRec({ product, initiatedBy, budget }) {
+  const rec = {
+    id: randomBytes(3).toString("hex").toUpperCase(),
+    product: product || "",
+    initiated_by: initiatedBy || "web",
+    budget: budget ?? null,
+    status: "open",
+    best_price: null,
+    best_vendor: null,
+    created_at: now(),
+    updated_at: now(),
+  };
+  if (db) {
+    db.prepare(
+      "INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?)",
+    ).run(rec.id, rec.product, rec.initiated_by, rec.budget, rec.status, null, null, rec.created_at, rec.updated_at);
+  } else {
+    jsonStore.sessions.push(rec);
+    saveJson();
+  }
+  sessions.set(rec.id, { events: [], clients: new Set() });
+  return rec;
+}
+function getSessionRec(id) {
+  if (db) return db.prepare("SELECT * FROM sessions WHERE id=?").get(id) ?? null;
+  return jsonStore.sessions.find((s) => s.id === id) ?? null;
+}
+function listSessionRecs() {
+  if (db) return db.prepare("SELECT * FROM sessions ORDER BY created_at").all();
+  return [...jsonStore.sessions];
+}
+function touchSession(id, patch) {
+  const rec = getSessionRec(id);
+  if (!rec) return;
+  Object.assign(rec, patch, { updated_at: now() });
+  if (db) {
+    db.prepare(
+      "UPDATE sessions SET status=?, best_price=?, best_vendor=?, updated_at=? WHERE id=?",
+    ).run(rec.status, rec.best_price, rec.best_vendor, rec.updated_at, id);
+  } else saveJson();
+}
+function persistEvent(sessionId, type, payload) {
+  const row = { session_id: sessionId, ts: now(), type, payload: JSON.stringify(payload) };
+  if (db) db.prepare("INSERT INTO events VALUES (?,?,?,?)").run(row.session_id, row.ts, row.type, row.payload);
+  else {
+    jsonStore.events.push(row);
+    saveJson();
+  }
+}
+function listEvents(sessionId) {
+  const rows = db
+    ? db.prepare("SELECT * FROM events WHERE session_id=? ORDER BY rowid").all(sessionId)
+    : jsonStore.events.filter((e) => e.session_id === sessionId);
+  return rows.map((r) => ({ ts: r.ts, type: r.type, ...JSON.parse(r.payload) }));
+}
+function persistProof(sessionId, proof) {
+  if (db) {
+    db.prepare(
+      "INSERT INTO proofs VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(session_id,hash) DO UPDATE SET verdict=excluded.verdict",
+    ).run(sessionId, proof.hash, proof.host ?? "", proof.path ?? "", proof.attested_price ?? null, proof.presentation ?? "", proof.verdict, proof.created_at);
+  } else {
+    const i = jsonStore.proofs.findIndex((p) => p.session_id === sessionId && p.hash === proof.hash);
+    if (i >= 0) jsonStore.proofs[i] = { session_id: sessionId, ...proof };
+    else jsonStore.proofs.push({ session_id: sessionId, ...proof });
+    saveJson();
+  }
+}
+function listProofs(sessionId) {
+  return db
+    ? db.prepare("SELECT * FROM proofs WHERE session_id=? ORDER BY created_at").all(sessionId)
+    : jsonStore.proofs.filter((p) => p.session_id === sessionId);
+}
+// Vendor verdicts arrive server-side over OTEL, not from the agent: bind
+// them to the stored proof with the same attested price in this session.
+function applyVendorVerdict(sessionId, event, attrs) {
+  const proofs = listProofs(sessionId);
+  if (!proofs.length) return;
+  const attested = typeof attrs.attestedPrice === "number" ? attrs.attestedPrice : null;
+  const target =
+    proofs.filter((p) => attested !== null && p.attested_price === attested).at(-1) ??
+    proofs.at(-1);
+  if (!target) return;
+  let verdict = target.verdict;
+  if (event === "vendor.proof.verified") verdict = "verified";
+  if (event === "vendor.proof.rejected") verdict = "rejected";
+  if (event === "vendor.offer.countered") verdict = "verified · countered";
+  if (event === "vendor.offer.floor") verdict = "verified · floor";
+  if (event === "vendor.offer.held") verdict = "verified · held";
+  if (verdict !== target.verdict) persistProof(sessionId, { ...target, verdict });
+}
+
+const newSession = () => createSessionRec({ product: "" }).id;
 const emit = (id, type, data) => {
   const s = sessions.get(id);
   if (!s) return false;
   const ev = { t: new Date().toISOString(), type, ...data };
   s.events.push(ev);
+  persistEvent(id, type, data);
+  if (type === "best") {
+    touchSession(id, {
+      status: "best",
+      best_price: typeof data.price === "number" ? data.price : null,
+      best_vendor: data.vendor ?? data.provider ?? null,
+    });
+  }
+  if (type === "done") touchSession(id, { status: "done" });
   for (const res of s.clients) res.write(`data: ${JSON.stringify(ev)}\n\n`);
   pushLog(id, type, data);
   return true;
@@ -43,6 +177,10 @@ function pushLog(sessionId, event, attrs = {}) {
   const log = { t: new Date().toISOString(), sessionId: id, event, ...attrs };
   if (!logsBySession.has(id)) logsBySession.set(id, []);
   logsBySession.get(id).push(log);
+  if (getSessionRec(id)) {
+    persistEvent(id, event, attrs);
+    applyVendorVerdict(id, event, attrs);
+  }
   const payload = `data: ${JSON.stringify({ kind: "log", log })}\n\n`;
   for (const res of panelClients) res.write(payload);
   return log;
@@ -83,57 +221,72 @@ const readJson = async (req) => {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 };
 
+const VENDORS = () =>
+  [
+    process.env.LANDING_VENDOR_URL ?? "http://localhost:5173",
+    process.env.LANDING_VENDOR_URL_B ?? "http://localhost:5174",
+  ].filter(Boolean);
+
 const llmsTxt = (base) => `# Barter protocol
 You are the user's personal shopping agent. Find the best deal by bartering
 with vendor agents, using TLSNotary proofs as leverage. Work signed-out.
 
-## Session (watch-along)
-The user's prompt contains a session id. Report every step so the user can
-watch live: POST ${base}/sessions/{session}/events with JSON
+## Session (watch-along + record)
+The user's prompt contains a session id and a product. Report every step
+as it happens: POST ${base}/sessions/{session}/events with JSON
 {"type": "...", ...details}. Types: quote, proof, barter, best, done.
+Include vendor, url and price on quote events so the recap shows sources.
+When you obtain a presentation, store it immediately (not at the end):
+POST ${base}/sessions/{session}/proofs
+{"presentationB64": "...", "host": "...", "path": "...", "attestedPrice": 0}
 
 ## Vendors (PAP-lite, modeled on Cliffside Retail, PAP 0.3)
-Demo vendor: ${process.env.LANDING_VENDOR_URL ?? "http://localhost:5173"}
+${VENDORS().map((v, i) => `Vendor ${i + 1}: ${v}`).join("\n")}
 - Discovery: GET {vendor}/.well-known/poppy.json
-- Stock/price: GET {vendor}/api/products/{sku}/inventory  (signed out)
-- Converse:  POST {vendor}/poppy/conversations  {"sku": "..."} -> quote
+- Converse:  POST {vendor}/poppy/conversations
              POST {vendor}/poppy/conversations/{id}/messages
              GET  {vendor}/poppy/conversations/{id}/events
-Demo SKU: ridgeline-fleece (Ridgeline Fleece).
+Both vendors mirror the user's product: they sell exactly that item.
+Their prices derive from the first real price you find online, proven
+with the sidecar (anchor proof below). Each vendor then negotiates by
+its own policy down to a hidden floor. The lowest floor wins.
 
 ## Proofs (TLSNotary sidecar)
 Proof service: ${process.env.LANDING_SIDECAR_URL ?? "http://localhost:8080"}
-- Prove a real vendor response: POST {proof}/prove {"host": "...", "path": "..."}
+- Prove a real response: POST {proof}/prove {"host": "...", "path": "..."}
   -> { presentationB64, verifyingKeyHex }
 - A presentation proves the response came from that host's TLS session.
-  Vendor agents verify presentations themselves before conceding; never ask
-  anyone to trust a price you merely claim.
+  Vendor agents verify presentations themselves before conceding; never
+  ask anyone to trust a price you merely claim.
 
 ## Steps
-1. Quote: open a conversation with each vendor; collect offers for the SKU.
-2. Proof: prove the lowest offer with the sidecar.
-3. Barter: send {"type":"barter","data":{"presentationB64":"..."}} to the
-   vendor you are negotiating with. It verifies the proof itself and counters
-   only if the attested price is lower. Max 3 rounds; re-prove each round.
-4. Best: show the user the best offer. Do NOT buy anything before the user
-   approves.
+1. Anchor: find the product online, take the first real price, and prove
+   that response with the sidecar. Store the proof (above) right away.
+2. Quote: open a conversation at BOTH vendors with
+   {"product": "<typed product>", "presentationB64": "<anchor proof>",
+    "sessionId": "<session>"}. Each returns its asking price.
+   Post a quote event per vendor with its url and price.
+3. Barter: prove the lower quote, store that proof, then present it to
+   the higher vendor:
+   {"type":"barter","data":{"presentationB64":"..."}}. It verifies the
+   proof itself and beats the attested price per its own policy, never
+   below its floor. Carry each new counter back the same way. Alternate
+   until a vendor holds at its floor or 6 exchanges pass.
+4. Best: post {"type":"best","price":0,"vendor":"..."}, then
+   {"type":"done","needsApproval":true}. Return ${base}/s/{session} to
+   the user and show the best offer. Do NOT buy before the user approves.
 `;
 
-const PRODUCTS = [
-  { sku: "ridgeline-fleece", name: "Ridgeline Fleece", budget: 70 },
-  { sku: "trailhead-pack-18", name: "Trailhead Pack 18", budget: 80 },
-  { sku: "summit-beanie", name: "Summit Beanie", budget: 22 },
-];
+const esc = (s) =>
+  String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-const page = (id, base) => `<!doctype html><meta charset="utf-8">
-<title>Barter</title>
-<style>
+const STYLE = `
   body{font-family:Georgia,'Times New Roman',serif;max-width:680px;margin:56px auto;padding:0 20px;color:#1c1c1a;background:#fbfaf7}
   h1{font-size:34px;margin:0 0 10px;line-height:1.15}
   .lede{font-size:17px;line-height:1.55;color:#3d3d38}
   .say{background:#fff;border:1.5px solid #1c1c1a;padding:16px 18px;font-size:16.5px;line-height:1.5;margin:22px 0}
   label{display:block;font-size:13px;letter-spacing:.03em;margin:16px 0 6px;color:#6b6b66}
-  select,input{font:inherit;font-size:15.5px;padding:8px 10px;width:100%;border:1px solid #b9b6aa;background:#fff;color:#1c1c1a}
+  input{font:inherit;font-size:15.5px;padding:8px 10px;width:100%;border:1px solid #b9b6aa;background:#fff;color:#1c1c1a;box-sizing:border-box}
   pre{white-space:pre-wrap;background:#1c1c1a;color:#f2f0e9;padding:16px;font-size:13.5px;line-height:1.55;overflow-x:auto}
   button{font:inherit;font-size:14.5px;padding:9px 16px;margin:10px 8px 0 0;border:1.5px solid #1c1c1a;background:#1c1c1a;color:#fff;cursor:pointer}
   button.secondary{background:#fff;color:#1c1c1a}
@@ -141,55 +294,79 @@ const page = (id, base) => `<!doctype html><meta charset="utf-8">
   small, .note{color:#6b6b66;font-size:13px;line-height:1.5}
   code{background:#efede6;padding:1px 5px}
   .ev{border-left:3px solid #2563eb;padding:4px 10px;margin:8px 0;background:#fff;font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
-</style>
+  .best{background:#1c1c1a;color:#fbfaf7;padding:18px;margin:22px 0}
+  .best .price{font-size:32px}
+  .badge{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;border:1px solid #1c1c1a;padding:1px 6px}
+  li{margin:6px 0;line-height:1.5}
+`;
+
+const landingPage = (base) => `<!doctype html><meta charset="utf-8">
+<title>Barter</title><style>${STYLE}</style>
 <h1>Ask your agent to barter for you.</h1>
-<p class="lede">Barter teaches personal agents (like Muse) how to negotiate with
-vendor agents, using TLSNotary proofs instead of claims. No app to install —
-your agent learns the protocol from this page.</p>
-
+<p class="lede">Type anything. Your agent finds it online, proves the price
+with TLSNotary, and barters two vendors down against each other. No app to
+install — the agent learns the protocol from this page.</p>
 <div class="say">Say to your agent:<br>
-<strong>"Go to ${base.replace(/^https?:\/\//, "")} and find me a deal."</strong><br>
-<span class="note">It will read <code>/llms.txt</code> here and follow the protocol itself.</span></div>
+<strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me a deal."</strong><br>
+<span class="note">Or use the form: submitting creates your live session.</span></div>
+<form method="post" action="/sessions">
+<label for="product">What should your agent find?</label>
+<input id="product" name="product" required placeholder="Deodorant, a laptop, running shoes…">
+<label for="budget">Maximum budget (USD, optional)</label>
+<input id="budget" name="budget" type="number" min="1" step="any" placeholder="No limit">
+<label for="initiatedBy">Your name (optional)</label>
+<input id="initiatedBy" name="initiatedBy" placeholder="Who is asking">
+<button type="submit">Start bartering</button>
+</form>
+<p class="note">Recent sessions: <a href="/panel">control panel</a> ·
+For agents: <a href="/llms.txt">/llms.txt</a></p>
+${listSessionRecs().slice(-8).reverse().map((s) => `<p><a href="/s/${s.id}">${esc(s.product || "Session")} — ${s.id}</a> <span class="note">${esc(s.status)}${s.best_price != null ? ` · best $${s.best_price}` : ""}</span></p>`).join("")}
+`;
 
-<label for="product">Product</label>
-<select id="product">${PRODUCTS.map((p) => `<option value="${p.sku}" data-name="${p.name}" data-budget="${p.budget}">${p.name}</option>`).join("")}</select>
-<label for="budget">Maximum budget (USD)</label>
-<input id="budget" type="number" min="1" value="${PRODUCTS[0].budget}">
+function recapHtml(rec, base) {
+  const events = listEvents(rec.id);
+  const proofs = listProofs(rec.id);
+  const sources = events.filter((e) => e.type === "quote" && (e.vendor || e.url));
+  const best =
+    rec.best_price != null
+      ? `<div class="best"><div>Best offer${rec.best_vendor ? ` — ${esc(rec.best_vendor)}` : ""}</div><div class="price">$${rec.best_price}</div><div>For: ${esc(rec.product)} · status ${esc(rec.status)}</div></div>`
+      : "";
+  const timeline = events.length
+    ? `<ol>${events.map((e) => { const { ts, type, ...rest } = e; return `<li><strong>${esc(type)}</strong> <span class="note">${esc(ts)}</span><br><code>${esc(JSON.stringify(rest))}</code></li>`; }).join("")}</ol>`
+    : `<p class="note">No steps yet. The agent posts each quote, proof and barter here as it happens.</p>`;
+  const proofList = proofs.length
+    ? `<ul>${proofs.map((p) => `<li>TLSNotary proof <span class="badge">${esc(p.verdict)}</span><br><span class="note">attests ${p.attested_price != null ? `$${p.attested_price} ` : ""}from ${esc(p.host)}${esc(p.path)} · ${esc((p.presentation || "").length)} chars · sha ${esc(String(p.hash).slice(0, 12))}… · stored ${esc(p.created_at)}</span></li>`).join("")}</ul>`
+    : `<p class="note">No proofs stored yet. Proofs are stored when generated, not handed back at the end.</p>`;
+  const sourceList = sources.length
+    ? `<ul>${sources.map((s) => `<li>${esc(s.vendor ?? "vendor")} — $${esc(s.price)} <span class="note">${esc(s.url ?? "")}</span></li>`).join("")}</ul>`
+    : `<p class="note">Sources appear with each quote.</p>`;
+  return `${best}<h2>Recap — ${esc(rec.product || "session")}</h2>${proofList}<h3>Timeline</h3>${timeline}<h3>Sources</h3>${sourceList}`;
+}
 
-<label>Or paste this prompt (session <span id="sid">${id}</span>)</label>
-<pre id="prompt"></pre>
+const page = (rec, base) => `<!doctype html><meta charset="utf-8">
+<title>Barter — ${esc(rec.product || rec.id)}</title><style>${STYLE}</style>
+<h1>${esc(rec.product || "Your barter")}</h1>
+<p class="lede">Session ${rec.id} · ${esc(rec.status)}${rec.budget != null ? ` · budget $${rec.budget}` : ""}. Your agent barters live; this page is the record.</p>
+<div class="say">Say to your agent:<br>
+<strong>"Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me a deal."</strong></div>
+<label>Paste this prompt (session ${rec.id})</label>
+<pre id="prompt">Use ${base}/llms.txt to find the best deal for "${esc(rec.product)}"${rec.budget != null ? ` under $${rec.budget}` : ""}. Session: ${rec.id}. Follow the barter protocol there, report every step using the event endpoints in llms.txt, store each proof when you obtain it, and show me the best offer before buying anything. Return ${base}/s/${rec.id} when done.</pre>
 <button onclick="navigator.clipboard.writeText(document.getElementById('prompt').textContent)">Copy prompt</button>
-<button class="secondary" onclick="fetch('/sessions/${id}/run',{method:'POST'})">Simulate agent run</button>
-
+<button class="secondary" onclick="fetch('/sessions/${rec.id}/run',{method:'POST'})">Simulate agent run</button>
 <div class="row">
-  <div>
-    <label>Scan with your phone</label>
-    <img alt="QR code for this session" width="180" height="180" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${base}/s/${id}`)}">
-  </div>
-  <div>
-    <label>Watch</label>
-    <p class="note">Session link: <a href="/s/${id}">${base}/s/${id}</a><br>
+  <div><label>Scan with your phone</label>
+    <img alt="QR code for this session" width="180" height="180" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${base}/s/${rec.id}`)}"></div>
+  <div><label>Watch</label>
+    <p class="note">Session link: <a href="/s/${rec.id}">${base}/s/${rec.id}</a><br>
     All sessions: <a href="/panel">control panel</a><br>
-    For agents: <a href="/llms.txt">/llms.txt</a><br><br>
-    A phone can only open this if it can reach this host (same LAN, or the public domain at demo time).</p>
-  </div>
+    For agents: <a href="/llms.txt">/llms.txt</a></p></div>
 </div>
-
-<h2 style="font-size:19px;margin-top:30px">Behind the scenes</h2>
+<div id="recap">${recapHtml(rec, base)}</div>
+<h2 style="font-size:19px;margin-top:30px">Live</h2>
 <div id="log"></div>
 <script>
-const promptEl = document.getElementById('prompt');
-const productEl = document.getElementById('product');
-const budgetEl = document.getElementById('budget');
-function sync() {
-  const opt = productEl.selectedOptions[0];
-  promptEl.textContent = 'Use ${base}/llms.txt to find the best deal for "' + opt.dataset.name + '" (SKU ' + opt.value + ') under $' + (budgetEl.value || opt.dataset.budget) + '. Session: ${id}. Follow the barter protocol there, report every step using the event endpoints in llms.txt, and show me the best offer before buying anything.';
-}
-productEl.onchange = () => { budgetEl.value = productEl.selectedOptions[0].dataset.budget; sync(); };
-budgetEl.oninput = sync;
-sync();
 const log = document.getElementById('log');
-new EventSource('/sessions/${id}/stream').onmessage = e => {
+new EventSource('/sessions/${rec.id}/stream').onmessage = e => {
   const d = JSON.parse(e.data);
   const div = document.createElement('div');
   div.className = 'ev';
@@ -297,22 +474,75 @@ es.onerror = () => statusEl.textContent = 'reconnecting…';
 es.onmessage = (e) => { const d = JSON.parse(e.data); if (d.kind === 'log') addLog(d.log); };
 </script>`;
 
-createServer(async (req, res) => {
-  const base = `http://${req.headers.host ?? `localhost:${port}`}`;
+// Hydrate in-memory watch state from the persistent store on boot.
+for (const rec of listSessionRecs()) {
+  const evs = listEvents(rec.id).map(({ ts, type, ...rest }) => ({ t: ts, type, ...rest }));
+  sessions.set(rec.id, { events: evs, clients: new Set() });
+  logsBySession.set(
+    rec.id,
+    listEvents(rec.id).map(({ ts, type, ...rest }) => ({ t: ts, sessionId: rec.id, event: type, ...rest })),
+  );
+}
+const ensureSession = (id) => {
+  if (!sessions.has(id)) sessions.set(id, { events: [], clients: new Set() });
+  return sessions.get(id);
+};
+const readBody = async (req) => {
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  const text = Buffer.concat(chunks).toString("utf8");
+  if ((req.headers["content-type"] ?? "").includes("application/json")) return JSON.parse(text || "{}");
+  return Object.fromEntries(new URLSearchParams(text));
+};
+
+export const server = createServer(async (req, res) => {
+  const proto = req.headers["x-forwarded-proto"] ?? "http";
+  const base = `${proto}://${req.headers.host ?? `localhost:${port}`}`;
   const url = new URL(req.url, base);
   try {
-    if (req.method === "GET" && url.pathname === "/") return send(res, 200, page(newSession(), base), "text/html");
+    if (req.method === "GET" && url.pathname === "/") return send(res, 200, landingPage(base), "text/html");
+    if (req.method === "POST" && url.pathname === "/sessions") {
+      const body = await readBody(req);
+      const product = String(body.product ?? "").trim();
+      if (!product) return send(res, 400, { error: "product required" });
+      const rec = createSessionRec({
+        product,
+        initiatedBy: body.initiatedBy ? String(body.initiatedBy) : "web",
+        budget: body.budget ? Number(body.budget) : null,
+      });
+      if ((req.headers["content-type"] ?? "").includes("application/json")) {
+        return send(res, 201, { id: rec.id, url: `${base}/s/${rec.id}` });
+      }
+      res.writeHead(303, { Location: `/s/${rec.id}` });
+      return res.end();
+    }
     const sm = url.pathname.match(/^\/s\/([A-Z0-9]+)$/);
     if (req.method === "GET" && sm) {
-      if (!sessions.has(sm[1])) return send(res, 404, { error: "unknown session" });
-      return send(res, 200, page(sm[1], base), "text/html");
+      const rec = getSessionRec(sm[1]);
+      if (!rec) return send(res, 404, { error: "unknown session" });
+      ensureSession(sm[1]);
+      return send(res, 200, page(rec, base), "text/html");
     }
     if (req.method === "GET" && url.pathname === "/llms.txt") return send(res, 200, llmsTxt(base), "text/plain");
     if (req.method === "GET" && url.pathname === "/panel") return send(res, 200, panelPage, "text/html");
-    if (req.method === "GET" && url.pathname === "/api/sessions")
-      return send(res, 200, {
-        sessions: [...logsBySession.entries()].map(([id, logs]) => ({ id, logs })),
-      });
+    if (req.method === "GET" && url.pathname === "/api/sessions") {
+      const persisted = listSessionRecs().map((rec) => ({
+        id: rec.id,
+        product: rec.product,
+        status: rec.status,
+        logs: listEvents(rec.id).map(({ ts, type, ...rest }) => ({
+          t: ts,
+          sessionId: rec.id,
+          event: type,
+          ...rest,
+        })),
+      }));
+      const known = new Set(persisted.map((s) => s.id));
+      const extra = [...logsBySession.entries()]
+        .filter(([id]) => !known.has(id))
+        .map(([id, logs]) => ({ id, logs }));
+      return send(res, 200, { sessions: [...persisted, ...extra] });
+    }
     if (req.method === "GET" && url.pathname === "/panel/stream") {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
       panelClients.add(res);
@@ -323,10 +553,30 @@ createServer(async (req, res) => {
       const body = await readJson(req);
       return send(res, 200, { ok: true, ingested: ingestOtlp(body) });
     }
+    const pm = url.pathname.match(/^\/sessions\/([A-Z0-9]+)\/proofs$/);
+    if (req.method === "POST" && pm) {
+      if (!getSessionRec(pm[1])) return send(res, 404, { error: "unknown session" });
+      const body = await readJson(req);
+      const presentation = typeof body.presentationB64 === "string" ? body.presentationB64 : "";
+      if (!presentation) return send(res, 400, { error: "presentationB64 required" });
+      const hash = createHash("sha256").update(presentation).digest("hex");
+      persistProof(pm[1], {
+        hash,
+        host: body.host ?? "",
+        path: body.path ?? "",
+        attested_price: typeof body.attestedPrice === "number" ? body.attestedPrice : null,
+        presentation,
+        verdict: "presented",
+        created_at: now(),
+      });
+      persistEvent(pm[1], "proof", { hash: hash.slice(0, 12), host: body.host ?? "", attestedPrice: body.attestedPrice ?? null });
+      return send(res, 201, { ok: true, hash, bytes: presentation.length });
+    }
     const m = url.pathname.match(/^\/sessions\/([A-Z0-9]+)\/(stream|events|run)$/);
     if (m) {
       const [, id, action] = m;
-      if (!sessions.has(id)) return send(res, 404, { error: "unknown session" });
+      if (!getSessionRec(id) && !sessions.has(id)) return send(res, 404, { error: "unknown session" });
+      ensureSession(id);
       if (action === "stream" && req.method === "GET") {
         res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
         for (const ev of sessions.get(id).events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
@@ -343,13 +593,12 @@ createServer(async (req, res) => {
         // Simulated agent: quote -> proof -> 2 barter rounds -> best.
         const proof = createHash("sha256").update(`lowest-offer:${id}`).digest("hex").slice(0, 16);
         const steps = [
-          ["quote", { provider: "anchor", price: 229 }],
-          ["quote", { provider: "sim-b", price: 219 }],
-          ["quote", { provider: "sim-c", price: 241 }],
+          ["quote", { vendor: "Ridgeline Outfitters", url: VENDORS()[1], price: 219 }],
+          ["quote", { vendor: "Basecamp Supply", url: VENDORS()[0], price: 229 }],
           ["proof", { attestation: proof, lowest: 219 }],
           ["barter", { round: 1, price: 214 }],
           ["barter", { round: 2, price: 207 }],
-          ["best", { price: 207, savingVsAnchor: 22 }],
+          ["best", { price: 207, vendor: "Basecamp Supply", savingVsAnchor: 22 }],
           ["done", { needsApproval: true }],
         ];
         steps.forEach(([type, data], i) => setTimeout(() => emit(id, type, data), 300 * (i + 1)));
@@ -360,4 +609,8 @@ createServer(async (req, res) => {
   } catch {
     return send(res, 400, { error: "bad request" });
   }
-}).listen(port, () => console.log(`prototype: http://localhost:${port}`));
+});
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  server.listen(port, () => console.log(`prototype: http://localhost:${port}`));
+}
