@@ -349,9 +349,12 @@ Proof service: ${process.env.LANDING_SIDECAR_URL ?? "http://localhost:8080"}
    ${base}/s/{session}
    Want me to go ahead and buy it?
 
-   Give the FULL session link, never the bare session id. No other
-   prices, no steps, no protocol words. Do NOT buy anything before
-   the user approves.
+   Give the FULL session link, never the bare session id. Put the
+   link on its own line as plain text, exactly as shown: no markdown
+   formatting on it, no bold or italics, no ** or __ or _ around it,
+   no brackets or punctuation stuck to the end. No other prices, no
+   steps, no protocol words. Do NOT buy anything before the user
+   approves.
 `;
 
 const esc = (s) =>
@@ -537,10 +540,10 @@ const page = (rec, base) => {
   .tmove.down{color:#137333}.tmove.up{color:#b3261e}.tmove.flat{color:#6b6b66}
 </style>
 <h1>${esc(rec.product || "Your barter")}</h1>
-<p class="lede">Session ${rec.id} · ${esc(rec.status)}${rec.budget != null ? ` · budget $${rec.budget}` : ""}${rec.keyphrase ? ` · keyphrase <code>${esc(rec.keyphrase)}</code>` : ""}</p>
-${rec.best_price != null ? `<div class="best"><div>Best offer${rec.best_vendor ? ` from ${esc(rec.best_vendor)}` : ""}</div><div class="price">$${rec.best_price}</div></div>` : ""}
+<p class="lede">Session ${rec.id} · <span id="statusText">${esc(rec.status)}</span>${rec.budget != null ? ` · budget $${rec.budget}` : ""}${rec.keyphrase ? ` · keyphrase <code>${esc(rec.keyphrase)}</code>` : ""}</p>
+<div id="bestSlot">${rec.best_price != null ? `<div class="best"><div>Best offer${rec.best_vendor ? ` from ${esc(rec.best_vendor)}` : ""}</div><div class="price">$${rec.best_price}</div></div>` : ""}</div>
 <div class="tree">
-<div class="troot"><span class="ttag">SESSION</span><span class="tcall">session(product="${esc(rec.product)}", status="${esc(rec.status)}")</span><span class="tmove flat">${tree.count} calls</span></div>
+<div class="troot"><span class="ttag">SESSION</span><span class="tcall">session(product="${esc(rec.product)}", status="<span id="rootStatus">${esc(rec.status)}</span>")</span><span class="tmove flat" id="callCount">${tree.count} calls</span></div>
 <div class="tchildren" id="tchildren">${tree.rows || `<div class="trow"><span class="tcall">waiting for the agent to start</span></div>`}</div>
 </div>
 <script>
@@ -568,8 +571,19 @@ function appendRow(d){
   div.className = 'trow';
   div.innerHTML = '<span class="ttag">' + escHtml(type.split('.')[0].toUpperCase()) + '</span><span class="tcall">' + escHtml(type.replace(/^(vendor|muse|notary)\./,'') + '(' + args.join(', ') + ')') + '</span><span class="tmove ' + cls + '">' + escHtml(mv) + '</span>';
   treeEl.appendChild(div);
+  const cc = document.getElementById('callCount');
+  if (cc) cc.textContent = treeEl.querySelectorAll('.trow').length + ' calls';
+  if (type === 'best' && price !== null) {
+    const slot = document.getElementById('bestSlot');
+    const vendor = d.vendor || d.provider || '';
+    slot.innerHTML = '<div class="best"><div>Best offer' + (vendor ? ' from ' + escHtml(vendor) : '') + '</div><div class="price">$' + price + '</div></div>';
+    for (const el of [document.getElementById('statusText'), document.getElementById('rootStatus')]) if (el) el.textContent = 'best';
+  }
+  if (type === 'done') {
+    for (const el of [document.getElementById('statusText'), document.getElementById('rootStatus')]) if (el) el.textContent = 'done';
+  }
 }
-new EventSource('/sessions/${rec.id}/stream').onmessage = e => appendRow(JSON.parse(e.data));
+new EventSource('/sessions/${rec.id}/stream?live=1').onmessage = e => appendRow(JSON.parse(e.data));
 </script>`;
 };
 
@@ -818,7 +832,9 @@ export const server = createServer(async (req, res) => {
       ensureSession(id);
       if (action === "stream" && req.method === "GET") {
         res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-        for (const ev of sessions.get(id).events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+        if (url.searchParams.get("live") !== "1") {
+          for (const ev of sessions.get(id).events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+        }
         sessions.get(id).clients.add(res);
         req.on("close", () => sessions.get(id).clients.delete(res));
         return;
