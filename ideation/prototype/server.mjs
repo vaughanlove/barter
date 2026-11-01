@@ -402,7 +402,7 @@ cryptographically attested with
 <a href="https://github.com/tlsnotary/tlsn">TLSNotary</a>, so vendors
 only move on prices that check out.</p>
 <div class="cardwrap">
-<div class="say"><p class="quote">&ldquo;Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on <span class="rotator" id="rotator">deodorant</span>&rdquo;</p></div>
+<div class="say"><p class="quote">&ldquo;Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on <span class="rotator" id="rotator">carpe deodorant</span>&rdquo;</p></div>
 <button class="copychip" onclick="navigator.clipboard.writeText('Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on [your item]. Keyphrase: ${phrase}');this.textContent='Copied'">Copy prompt</button>
 </div>
 <div class="faq">
@@ -418,7 +418,7 @@ only move on prices that check out.</p>
 (function rotate() {
   const el = document.getElementById('rotator');
   if (!el) return;
-  const words = ['deodorant', 'toothpaste', 'kidney beans'];
+  const words = ['carpe deodorant', 'kidney beans', 'moretti beer'];
   const chars = 'abcdefghijklmnopqrstuvwxyz';
   let wi = 0;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
