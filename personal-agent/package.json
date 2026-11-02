@@ -1,0 +1,16 @@
+{
+  "name": "barter-personal-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A minimal Personal Agent Protocol (PAP) client: Muse Spark acting as your personal barter agent, driven from the CLI. Also serves as the end-to-end smoke test for the whole barter system.",
+  "bin": {
+    "pap": "./run.mjs"
+  },
+  "scripts": {
+    "start": "node run.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

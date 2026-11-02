@@ -97,6 +97,41 @@ test("handoff follows the newest session even without a keyphrase", async () => 
   assert.equal((await viaPhrase.json()).via, "keyphrase");
 });
 
+test("session page shows each barter step once despite dual reporting", async () => {
+  const created = await post("/sessions", { product: "Dedup Soap" });
+  const { id } = await created.json();
+  const ev = (type, body = {}) => post(`/sessions/${id}/events`, { type, ...body });
+
+  // Same facts arrive twice: once from the agent, once from vendor OTEL.
+  await post(`/sessions/${id}/proofs`, {
+    presentationB64: "aGVsbG8td29ybGQ=",
+    host: "ridgeline.barter.computer",
+    attestedPrice: 17.53,
+  });
+  await ev("vendor.conversation.created", { price: 18.05 });
+  await ev("vendor.quote.issued", { price: 18.05 });
+  await ev("quote", { vendor: "basecamp", price: 18.05 });
+  await ev("vendor.proof.received", { price: 18.05 });
+  await ev("vendor.proof.verified", { price: 18.05, attestedPrice: 17.53 });
+  await ev("vendor.offer.countered", { price: 17.15, attestedPrice: 17.53 });
+  await ev("best", { vendor: "basecamp", price: 17.15 });
+  await ev("done", { needsApproval: true });
+
+  const html = await (await fetch(`${base}/s/${id}`)).text();
+  const rows = (t) => (html.match(new RegExp(`<div class="trow" data-type="${t}"`, "g")) ?? []).length;
+  assert.equal(rows("quote"), 1);
+  assert.equal(rows("proof"), 1);
+  assert.equal(rows("vendor.offer.countered"), 1);
+  assert.equal(rows("vendor.conversation.created"), 0);
+  assert.equal(rows("vendor.quote.issued"), 0);
+  assert.equal(rows("vendor.proof.received"), 0);
+  assert.equal(rows("vendor.proof.verified"), 0);
+  assert.match(html, /verified · countered/, "verdict survives as the proof row badge");
+  const tree = html.slice(html.indexOf('id="tchildren">'), html.indexOf("<script>"));
+  assert.ok(!tree.includes("up $"), "vendor old price must not read as an increase");
+  assert.match(tree, /down \$0\.90/);
+});
+
 test("products are escaped on the session page", async () => {
 
   const created = await post("/sessions", { product: '"><script>alert(1)</script>' });

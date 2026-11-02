@@ -267,129 +267,148 @@ const VENDORS = () =>
 const SIDECAR_URL = process.env.LANDING_SIDECAR_URL ?? "http://localhost:8080";
 const PROVE_URL = `${SIDECAR_URL}/prove`;
 
-const llmsTxt = (base) => `# Barter protocol
-You are the user's personal shopping agent. Find the best deal by bartering
-with vendor agents, using TLSNotary proofs as leverage. Work signed-out.
+const llmsTxt = (base) => `# Barter protocol (specification)
 
-## READ FIRST (do not skip)
-The user sent you here to RUN this protocol, not to answer from web
-search. Do not reply with a price roundup, a list of stores, or prices
-you found by searching. That is not this task.
-- FIRST, before searching for anything, create the session (Step 0
-  below) and keep its url. Everything else happens inside that
-  session's record.
-- This task is only complete when you have created a session, run the
-  steps, and your final message contains the full session link
-  (${base}/s/{session}) on its own line as plain text.
-- If you cannot finish the steps, still return the session link you
-  created and say plainly that the run did not finish. Never finish
-  with search results instead of the session link.
+This document describes a protocol in which a personal shopping agent
+barters with vendor agents, using TLSNotary proofs as negotiation
+leverage. It is a technical reference for agents that implement the
+protocol. All work is signed-out; no account exists on any service
+named here.
 
-## Session (you start it; watch-along + record)
-There is no web form. You are the entrypoint. The user's prompt ends
-with a line in exactly this shape:
+## Overview
 
-Keyphrase: <three lowercase words separated by spaces>
+A run has four phases: session creation, anchor proof, quoting, and
+barter. Each step is written to the session record as it happens, and
+the session page at ${base}/s/{session id} renders that record (best
+offer, timeline, proofs, sources). The chat with the user is not the
+record; the session record is.
 
-Example prompt ending: "Keyphrase: velvet otter meadow". That page is
-open in the user's browser, polling for this keyphrase, and jumps to
-the session by itself — but only if you pass the keyphrase through
-exactly. REQUIRED: copy the three words, in order, unchanged, into
-the "keyphrase" field of your session-creation call. Do not hyphenate
-them, add numbers, or invent a different phrase. Before anything
-else, create the session: POST ${base}/sessions with JSON
-{"product": "<what the user asked for>", "initiatedBy": "muse-agent",
- "keyphrase": "velvet otter meadow"}
--> {"id": "...", "url": "${base}/s/{id}", "keyphrase": "..."}. Check
-the response echoes the same keyphrase; if it does not, your session
-will not be found. Then proceed straight to the steps.
+A completed run is defined as: a session exists, its record contains
+quote, proof, barter, best, and done events in order, and the final
+chat message contains the full session link as described under
+"Expected final message". A reply that lists prices found by web
+search, without a session record, is not a completed run of this
+protocol.
 
-## Talking to the user (strict)
-- Every quote, proof and barter step goes to the session record ONLY:
-  POST ${base}/sessions/{session}/events and, for presentations,
-  POST ${base}/sessions/{session}/proofs. Never narrate steps,
-  prices-in-progress, or results to the user in chat while working.
-- Say nothing about the protocol while working. No jargon or debug
-  talk: never use anchor, proof, presentation, TLSNotary, exchange,
-  round, floor, attested, vendor agent, or session id in chat.
-- At most one in-progress line is allowed, exactly this plain form:
-  "Looking for the best price…"
-- Your only other chat message is the final message (see step 4).
+## Session record
 
-Report every step as it happens:
-POST ${base}/sessions/{session}/events with JSON
-{"type": "...", ...details}. Types: quote, proof, barter, best, done.
-Include vendor, url and price on quote events so the recap shows sources.
-When you obtain a presentation, store it immediately (not at the end):
-POST ${base}/sessions/{session}/proofs
-{"presentationB64": "...", "host": "...", "path": "...", "attestedPrice": 0}
+Sessions are created by the agent; there is no web form. Creation:
+
+POST ${base}/sessions
+{"product": "<what the user asked for>", "initiatedBy": "muse-agent"}
+
+Response: {"id": "...", "url": "${base}/s/{id}", "keyphrase": "..."}.
+
+User prompts for this protocol typically end with a line of the form
+"Keyphrase: <three lowercase words separated by spaces>" (example:
+"Keyphrase: velvet otter meadow"). When a prompt carries a keyphrase,
+it is passed unchanged in the "keyphrase" field of the creation
+payload. The page the user has open polls for that phrase and opens
+the session when it appears; the creation response echoes the phrase
+back, which is how the binding is confirmed. A session created
+without a keyphrase is still followed automatically by a page that
+was opened before the run started.
+
+Step reporting uses two endpoints:
+- POST ${base}/sessions/{id}/events with
+  {"type": "...", ...details}; types include quote, proof, barter,
+  best, and done. Quote events carry vendor, url, and price so the
+  recap can list sources.
+- POST ${base}/sessions/{id}/proofs with
+  {"presentationB64": "...", "host": "...", "path": "...",
+  "attestedPrice": 0}. A presentation is stored when it is obtained,
+  during the run. Vendor verdicts on proofs (verified, held,
+  countered) arrive separately from the vendors' own telemetry and
+  are bound to stored proofs in the record.
+
+## Chat surface
+
+The protocol expects chat to stay minimal, because the session recap
+is the detailed record. In practice this means step reporting goes
+to the endpoints above rather than into chat, and protocol
+vocabulary (anchor, proof, presentation, TLSNotary, exchange, floor,
+attested, session id) does not appear in user-facing messages. An
+in-progress message, if any, is a single plain line, for example:
+"Looking for the best price..."
 
 ## Vendors (PAP-lite, modeled on Cliffside Retail, PAP 0.3)
+
 ${VENDORS().map((v, i) => `Vendor ${i + 1}: ${v}`).join("\n")}
+
+Reference:
 - Discovery: GET {vendor}/.well-known/poppy.json
-- Converse:  POST {vendor}/poppy/conversations
-             POST {vendor}/poppy/conversations/{id}/messages
-             GET  {vendor}/poppy/conversations/{id}/events
-Both vendors mirror the user's product: they sell exactly that item.
-Their prices derive from the first real price you find online, proven
-with the sidecar (anchor proof below). Each vendor then negotiates by
-its own policy down to a hidden floor. The lowest floor wins.
+- Conversations: POST {vendor}/poppy/conversations;
+  POST {vendor}/poppy/conversations/{id}/messages;
+  GET {vendor}/poppy/conversations/{id}/events
 
-## Proofs (TLSNotary sidecar)
-Proof service: ${SIDECAR_URL}
-- The ONLY proof endpoint is: POST ${PROVE_URL}
-  with JSON {"host": "...", "path": "..."}
-  -> { presentationB64, verifyingKeyHex }
-- Read that URL again before calling. The proof service is its OWN
-  host (prove.*), not a path on the barter host. Calling /prove on
-  the barter/landing host returns 404 and proves nothing. POST only:
-  a GET returns 405.
-- If you get 404, you are on the wrong host. If you get 502, the
-  target page itself did not return HTTP 200 at that host and path;
-  fix the target URL, do not retry the same one.
-- Prove a real response: POST {proof}/prove {"host": "...", "path": "..."}
-- A presentation proves the response came from that host's TLS session.
-  Vendor agents verify presentations themselves before conceding; never
-  ask anyone to trust a price you merely claim.
+Vendor behaviour: both vendors sell the product named at conversation
+creation. Their asking prices and hidden floors derive from an
+attested anchor price supplied at creation (phase 2). Each vendor
+then beats verified rival prices according to its own policy, down
+to its floor. The vendor whose floor is lowest ends with the best
+price.
 
-## Steps
-0. Session: create it with the prompt's keyphrase (above), then barter.
-1. Anchor: find the product online and prove the first real price you
-   find, wherever you found it. The sidecar proves any public HTTPS
-   host. That first proof is the anchor both vendors derive from.
-   To locate the price on an arbitrary page, use the JEV classifier:
-   POST ${base}/find-price {"url": "<page url>", "product": "<product>"}
-   -> {price, snippet, confidence}. It only locates; the proof is
-   still what gets trusted. Prove the page it found the price on.
-   Store the proof (above) right away. Prefer an API-shaped JSON
-   response with a decimal dollar price, e.g. "price":"19.95"
-   (Shopify stores: use {host}/products/{handle}.json — the .js
-   endpoint prices in integer cents). If no online price
-   can be proved, say so in an event; never invent an anchor price.
-2. Quote: open a conversation at BOTH vendors with
-   {"product": "<typed product>", "presentationB64": "<anchor proof>",
-    "sessionId": "<session>"}. Each returns its asking price.
-   Post a quote event per vendor with its url and price.
-3. Barter: prove the lower quote, store that proof, then present it to
-   the higher vendor:
-   {"type":"barter","data":{"presentationB64":"..."}}. It verifies the
-   proof itself and beats the attested price per its own policy, never
-   below its floor. Carry each new counter back the same way. Alternate
-   until a vendor holds at its floor or 6 exchanges pass.
-4. Best: post {"type":"best","price":0,"vendor":"..."}, then
-   {"type":"done","needsApproval":true}. Then send the user exactly
-   one final message in exactly this shape, nothing else:
+## Proofs (TLSNotary sidecar, reference)
 
-   <product>: best price $<price> at <vendor name>.
-   ${base}/s/{session}
-   Want me to go ahead and buy it?
+Proof service: ${SIDECAR_URL}. Its single proof endpoint is
+POST ${PROVE_URL} with JSON {"host": "...", "path": "..."},
+returning {"presentationB64": "...", "verifyingKeyHex": "..."}.
+The service lives on its own host; the barter site itself has no
+/prove route (requests there return 404), and the proof endpoint is
+POST-only (a GET returns 405). A 502 from the proof service means
+the named target did not return HTTP 200 at that host and path.
 
-   Give the FULL session link, never the bare session id. Put the
-   link on its own line as plain text, exactly as shown: no markdown
-   formatting on it, no bold or italics, no ** or __ or _ around it,
-   no brackets or punctuation stuck to the end. No other prices, no
-   steps, no protocol words. Do NOT buy anything before the user
+A presentation attests that a response came from the named host's
+TLS session. Vendor agents verify presentations themselves before
+conceding any price.
+
+## Phases
+
+0. Session. The agent creates the session as described under
+   "Session record", including the prompt's keyphrase when present.
+1. Anchor. The first real online price for the product is proved
+   with the proof service; any public HTTPS host is provable. That
+   first proof is the anchor both vendors derive from, and it is
+   stored in the session record at this point. A price locator is
+   available for arbitrary pages: POST ${base}/find-price
+   {"url": "<page url>", "product": "<product>"} returns
+   {price, snippet, confidence}. The locator only locates; the proof
+   is the trusted artefact. API-shaped JSON with a decimal dollar
+   price (for example "price":"19.95") attests cleanly; Shopify
+   stores serve that shape at {host}/products/{handle}.json, while
+   their .js endpoint prices in integer cents. When no online price
+   can be proved, that fact is recorded as a session event; an anchor
+   price is not invented.
+2. Quoting. A conversation is opened at both vendors with
+   {"product": "<product>", "presentationB64": "<anchor proof>",
+   "sessionId": "<session id>"}. Each response contains an asking
+   price, recorded as a quote event with the vendor url and price.
+3. Barter. The lower quote is proved (and the proof stored), then
+   presented to the other vendor as
+   {"type":"barter","data":{"presentationB64":"..."}}. The vendor
+   verifies the proof itself and responds with a counter below the
+   attested price, per its policy, never below its floor. Each new
+   counter is carried back the same way, alternating, until a vendor
+   holds at its floor or 6 exchanges have passed.
+4. Completion. The record receives {"type":"best","price":0,
+   "vendor":"..."} followed by {"type":"done","needsApproval":true}.
+   Purchases are outside the protocol's scope until the user
    approves.
+
+## Expected final message
+
+The user-facing output of a completed run is a short message giving
+the product, the best price and vendor, the full session link, and
+an approval question. The session link appears on its own line as
+plain text: the bare session id is not a link, and markdown
+formatting characters attached to the URL (for example trailing
+**) become part of the address and break it.
+
+Example of the expected final message shape:
+
+<product>: best price $<price> at <vendor name>.
+${base}/s/{session id}
+Want me to go ahead and buy it?
 `;
 
 const esc = (s) =>
@@ -542,8 +561,21 @@ function treeRowsHtml(rec) {
   const proofs = listProofs(rec.id);
   let lastPrice = null;
   let lastKey = "";
+  const agentQuotePrices = new Set(
+    events.filter((e) => e.type === "quote" && typeof e.price === "number").map((e) => e.price),
+  );
   const rows = events.map((e) => {
     const type = String(e.type ?? "event");
+    // One row per fact. The vendor lifecycle chatters: creation and
+    // its quote are the same quote the agent also posts (the agent
+    // version carries vendor and url, so it wins), a received proof
+    // is already announced by the stored proof row, and a verified
+    // proof is that same row's verdict badge (its price field is the
+    // vendor's old price, which would read as a spurious increase).
+    if (type === "vendor.conversation.created") return "";
+    if (type === "vendor.proof.received") return "";
+    if (type === "vendor.proof.verified") return "";
+    if (type === "vendor.quote.issued" && agentQuotePrices.has(e.price)) return "";
     // The same step can arrive twice (agent event + vendor OTEL copy,
     // or rows stored before the dedup fix). Show each call once.
     const key = `${eventCall(e)}|${e.price ?? ""}|${e.attestedPrice ?? ""}`;
@@ -554,7 +586,7 @@ function treeRowsHtml(rec) {
     const verdict = type === "proof"
       ? (proofs.find((pr) => String(pr.hash).startsWith(String(e.hash ?? "")))?.verdict ?? "")
       : "";
-    return `<div class="trow"><span class="ttag">${esc(type.split(".")[0].toUpperCase())}</span><span class="tcall">${esc(eventCall(e))}</span>${verdict ? `<span class="ttag verdict">${esc(verdict)}</span>` : ""}<span class="tmove ${mv.cls}">${mv.price !== null ? esc(mv.tag) : ""}</span></div>`;
+    return `<div class="trow" data-type="${esc(type)}" data-price="${e.price ?? ""}"><span class="ttag">${esc(type.split(".")[0].toUpperCase())}</span><span class="tcall">${esc(eventCall(e))}</span>${verdict ? `<span class="ttag verdict">${esc(verdict)}</span>` : ""}<span class="tmove ${mv.cls}">${mv.price !== null ? esc(mv.tag) : ""}</span></div>`;
   });
   return { rows: rows.join(""), lastPrice, count: rows.filter(Boolean).length };
 }
@@ -586,7 +618,19 @@ let lastPrice = ${tree.lastPrice ?? "null"};
 const treeEl = document.getElementById('tchildren');
 function escHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function appendRow(d){
+  const rawType = String(d.type || 'event');
+  if (rawType === 'vendor.proof.received' || rawType === 'vendor.conversation.created' || rawType === 'vendor.proof.verified') return;
   const price = typeof d.price === 'number' ? d.price : null;
+  if (rawType === 'vendor.quote.issued' && price !== null) {
+    for (const old of treeEl.querySelectorAll('[data-type="quote"]')) {
+      if (Number(old.dataset.price) === price) return;
+    }
+  }
+  if (rawType === 'quote' && price !== null) {
+    for (const old of treeEl.querySelectorAll('[data-type="vendor.quote.issued"]')) {
+      if (Number(old.dataset.price) === price) old.remove();
+    }
+  }
   let mv = '', cls = 'flat';
   if (price !== null && lastPrice !== null) {
     if (price < lastPrice) { mv = 'down $' + (lastPrice - price).toFixed(2); cls = 'down'; }
@@ -604,6 +648,8 @@ function appendRow(d){
   if (price !== null) args.push('price=$' + price);
   const div = document.createElement('div');
   div.className = 'trow';
+  div.dataset.type = rawType;
+  div.dataset.price = price ?? '';
   div.innerHTML = '<span class="ttag">' + escHtml(type.split('.')[0].toUpperCase()) + '</span><span class="tcall">' + escHtml(type.replace(/^(vendor|muse|notary)\./,'') + '(' + args.join(', ') + ')') + '</span><span class="tmove ' + cls + '">' + escHtml(mv) + '</span>';
   treeEl.appendChild(div);
   const cc = document.getElementById('callCount');
