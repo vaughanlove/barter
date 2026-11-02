@@ -15,7 +15,13 @@
 
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { anchoredAsk, anchoredFloor, beat, decide, type PolicyDecision } from "./discount_policy.ts";
+import {
+  anchoredAsk,
+  anchoredFloor,
+  decide,
+  hardFallback,
+  type PolicyDecision,
+} from "./discount_policy.ts";
 import { proposeCounter } from "./llm_policy.ts";
 import { DEMO_SKU, getProduct, listProducts } from "./inventory.ts";
 
@@ -103,7 +109,7 @@ let promoPoolSpent = 0;
 // floor, at/above the attested price, or past the monthly pool.
 async function decideAnchored(conv: Conversation, attested: number): Promise<PolicyDecision> {
   const floor = conv.floorPrice ?? 0;
-  const fallback = beat(conv.price, attested, floor);
+  const fallback = hardFallback(conv.price, attested, floor);
   if (fallback.action === "reject") return fallback;
   conv.rounds = (conv.rounds ?? 0) + 1;
   const proposal = await proposeCounter({
@@ -129,7 +135,8 @@ async function decideAnchored(conv: Conversation, attested: number): Promise<Pol
     if (conv.price - price > remaining) {
       const funded = Math.round((conv.price - remaining) * 100) / 100;
       if (funded < attested && funded >= floor && funded < conv.price) price = funded;
-      else return { action: "reject", newPrice: conv.price, reason: "monthly promo pool exhausted" };
+      else
+        return { action: "reject", newPrice: conv.price, reason: "monthly promo pool exhausted" };
     }
   }
   return {

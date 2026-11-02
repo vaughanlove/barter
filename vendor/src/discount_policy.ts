@@ -32,6 +32,35 @@ export function anchoredFloor(anchor: number): number {
   return Math.max(0.01, round2(anchor * (1 - pct / 100)));
 }
 
+// The hard-coded fallback. No model, no environment, no configuration.
+// Steps down 3 to 8 percent at a time, bolder when far from the
+// discount ceiling (the floor) and finer as it approaches, always
+// landing below the verified price and never below the ceiling.
+// This is what runs whenever the LLM path is unavailable.
+export function hardFallback(
+  currentPrice: number,
+  attestedLowest: number | null,
+  floor: number,
+): PolicyDecision {
+  if (attestedLowest === null) {
+    return { action: "reject", newPrice: currentPrice, reason: "no verified lower offer" };
+  }
+  if (attestedLowest >= currentPrice) {
+    return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower" };
+  }
+  const headroomPct = ((currentPrice - floor) / currentPrice) * 100;
+  const stepPct = headroomPct > 20 ? 8 : headroomPct > 10 ? 5 : 3;
+  let target = round2(currentPrice * (1 - stepPct / 100));
+  if (target >= attestedLowest) target = round2(attestedLowest - 0.01);
+  if (target <= floor) {
+    if (floor >= currentPrice) {
+      return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower" };
+    }
+    return { action: "floor", newPrice: floor, reason: "best possible price reached" };
+  }
+  return { action: "concede", newPrice: target, reason: "verified lower offer" };
+}
+
 // Beat a verified rival price the way this vendor negotiates: just under
 // it, never below its floor. At the floor it holds — lowest floor wins.
 export function beat(

@@ -142,13 +142,13 @@ describe("proof-anchored mirror pricing", () => {
     await anchored();
   });
 
-  it("beats a verified rival by a penny, then stops at its floor", async () => {
+  it("steps down toward its discount ceiling, then stops at it", async () => {
     const id = await anchored();
 
     const beaten = await barter(id, "price-20.4");
     expect(beaten.body).toMatchObject({
       type: "offer",
-      data: { price: 20.39, floorReached: false },
+      data: { price: 19.95, floorReached: false },
     });
 
     const floored = await barter(id, "price-10");
