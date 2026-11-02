@@ -25,6 +25,7 @@ export async function proposeCounter(input: {
   floor: number;
   round: number;
   policyText: string;
+  context?: string;
 }): Promise<CounterProposal | null> {
   const key = process.env.MODEL_API_KEY;
   if (!key || !input.policyText) return null;
@@ -41,7 +42,7 @@ export async function proposeCounter(input: {
         messages: [
           {
             role: "user",
-            content: `You are the pricing agent for a company selling "${input.product}". Your company's negotiation policy, in its own words: "${input.policyText}"\n\nSituation: your current price is $${input.current}. A rival's lower price of $${input.attested} has been cryptographically verified. Your absolute bottom line is $${input.floor}: never propose below it. This is round ${input.round}.\n\nPropose your next price. It must be below $${input.attested} (you are beating a verified price, not matching it) and at or above $${input.floor}. Follow your company's policy for how boldly to move. Return ONLY JSON: {"price": number, "style": string} where style is a four-word-max description of your move, e.g. "penny under, holding firm".`,
+            content: `You are the pricing agent for a company selling "${input.product}". Your company's negotiation policy, in its own words: "${input.policyText}"\n\nSituation: your current price is $${input.current}. A rival's lower price of $${input.attested} has been cryptographically verified. Your absolute bottom line is $${input.floor}: never propose below it. This is round ${input.round}.${input.context ? `\n\nCompany state to weigh: ${input.context}` : ""}\n\nPropose your next price. It must be below $${input.attested} (you are beating a verified price, not matching it) and at or above $${input.floor}. Follow your company's policy for how boldly to move. Return ONLY JSON: {"price": number, "style": string} where style is a four-word-max description of your move, e.g. "penny under, holding firm".`,
           },
         ],
       }),

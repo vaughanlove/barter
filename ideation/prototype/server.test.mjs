@@ -48,6 +48,10 @@ test("apex serves minimal Poppy discovery for the requested domain", async () =>
   const www = await getWithHost("/.well-known/poppy.json", "www.barter.computer");
   assert.equal(www.status, 200);
   assert.equal(www.body.organization.domain, "barter.computer");
+
+  const home = await (await fetch(`${base}/`)).text();
+  assert.match(home, /Simulated vendors: <a href="https:\/\/basecamp\.barter\.computer">Basecamp Supply<\/a>/);
+  assert.match(home, /<a href="https:\/\/ridgeline\.barter\.computer">Ridgeline Outfitters<\/a>/);
 });
 
 test("typed product creates a persisted session with a recap", async () => {
@@ -181,6 +185,11 @@ test("session actions can be inspected with the vendor decision trace", async ()
             { key: "attestedPrice", value: { doubleValue: 2 } },
             { key: "reason", value: { stringValue: "penny under, holding firm" } },
             { key: "source", value: { stringValue: "deterministic fallback" } },
+            { key: "stockUnits", value: { doubleValue: 148 } },
+            { key: "stockPosture", value: { stringValue: "deep stock" } },
+            { key: "discountUsedPct", value: { doubleValue: 4.8 } },
+            { key: "headroomToCeilingPct", value: { doubleValue: 6.4 } },
+            { key: "promoPoolRemainingPct", value: { doubleValue: 91 } },
           ],
         }],
       }],
@@ -188,11 +197,14 @@ test("session actions can be inspected with the vendor decision trace", async ()
   });
 
   const html = await (await fetch(`${base}/s/${id}`)).text();
-  assert.match(html, /id="replayBtn"/);
+  assert.ok(!html.includes("Replay actions"));
   assert.match(html, /class="tdetail"/);
   assert.match(html, /Actor: Ridgeline Outfitters/);
   assert.match(html, /Decision note: penny under, holding firm/);
   assert.match(html, /Decision source: deterministic fallback/);
+  assert.match(html, /Stock picture: about 148 units \(deep stock\)/);
+  assert.match(html, /Discount picture: 4\.8% of the opening ask used/);
+  assert.match(html, /Promo pool: 91% remaining/);
   assert.match(html, /no natural-language message is recorded/);
 });
 

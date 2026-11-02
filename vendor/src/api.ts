@@ -49,8 +49,42 @@ interface Conversation {
   floorPrice?: number;
   ask?: number;
   rounds?: number;
+  stock?: number;
   sessionId?: string;
   events: Record<string, unknown>[];
+}
+
+// Simulated per-product stock for the demo company. Deterministic per
+// vendor and SKU so the same product gets the same shelf every time.
+function seededStock(sku: string): number {
+  const seed = `${vendorName}:${sku}`;
+  let hash = 0;
+  for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return 24 + (hash % 180);
+}
+
+function stockPosture(units: number): string {
+  if (units >= 120) return "deep stock";
+  if (units >= 50) return "healthy stock";
+  return "tight stock";
+}
+
+function decisionFactors(conv: Conversation, resultingPrice: number): Record<string, string | number> {
+  const factors: Record<string, string | number> = {};
+  if (typeof conv.stock === "number") {
+    factors.stockUnits = conv.stock;
+    factors.stockPosture = stockPosture(conv.stock);
+  }
+  const ask = conv.ask ?? conv.price;
+  if (ask > 0) factors.discountUsedPct = Math.round(((ask - resultingPrice) / ask) * 1000) / 10;
+  if (typeof conv.floorPrice === "number" && resultingPrice > 0) {
+    factors.headroomToCeilingPct = Math.round(((resultingPrice - conv.floorPrice) / resultingPrice) * 1000) / 10;
+  }
+  const poolCap = Number(process.env.VENDOR_MONTHLY_POOL_USD ?? 0);
+  if (poolCap > 0) {
+    factors.promoPoolRemainingPct = Math.max(0, Math.round(((poolCap - promoPoolSpent) / poolCap) * 1000) / 10);
+  }
+  return factors;
 }
 
 const slugify = (s: string): string =>
@@ -116,6 +150,13 @@ async function decideAnchored(conv: Conversation, attested: number): Promise<Pol
   const fallback = hardFallback(conv.price, attested, floor);
   if (fallback.action === "reject") return fallback;
   conv.rounds = (conv.rounds ?? 0) + 1;
+  const factors = decisionFactors(conv, conv.price);
+  const context = [
+    typeof factors.stockUnits === "number" ? `about ${factors.stockUnits} units in stock (${factors.stockPosture})` : "",
+    typeof factors.discountUsedPct === "number" ? `${factors.discountUsedPct}% of the opening ask already discounted` : "",
+    typeof factors.headroomToCeilingPct === "number" ? `${factors.headroomToCeilingPct}% of headroom left above the bottom line` : "",
+    typeof factors.promoPoolRemainingPct === "number" ? `${factors.promoPoolRemainingPct}% of the monthly promo pool remaining` : "",
+  ].filter(Boolean).join("; ");
   const proposal = await proposeCounter({
     product: conv.product ?? conv.sku,
     current: conv.price,
@@ -123,6 +164,7 @@ async function decideAnchored(conv: Conversation, attested: number): Promise<Pol
     floor,
     round: conv.rounds,
     policyText: process.env.VENDOR_POLICY_TEXT ?? "",
+    context,
   });
   if (!proposal) return fallback;
   let price = proposal.price;
@@ -302,6 +344,7 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
           price: anchoredAsk(anchor),
           ask: anchoredAsk(anchor),
           rounds: 0,
+          stock: seededStock(slugify(productName)),
           sessionId,
           events: [],
         };
@@ -327,6 +370,8 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
         id: randomBytes(4).toString("hex"),
         sku,
         price: product.price,
+        ask: product.price,
+        stock: product.sizes.reduce((sum, s) => sum + s.quantity, 0),
         sessionId,
         events: [],
       };
@@ -394,6 +439,7 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
           emit(conv, "vendor.offer.held", {
             price: conv.price,
             attestedPrice: attested,
+            ...decisionFactors(conv, conv.price),
             reason: decision.reason,
             ...(decision.source ? { source: decision.source } : {}),
             ...(decision.style ? { style: decision.style } : {}),
@@ -405,6 +451,7 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
         emit(conv, decision.action === "floor" ? "vendor.offer.floor" : "vendor.offer.countered", {
           price: conv.price,
           attestedPrice: attested,
+          ...decisionFactors(conv, conv.price),
           reason: decision.reason,
           ...(decision.source ? { source: decision.source } : {}),
           ...(decision.style ? { style: decision.style } : {}),

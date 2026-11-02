@@ -451,6 +451,9 @@ const STYLE = `
   .quote{font-size:29px;line-height:1.3;margin:0}
   .copychip{position:absolute;right:18px;bottom:-15px;margin:0;font-size:12.5px;padding:7px 13px;box-shadow:3px 3px 0 #1c1c1a}
   .faq{margin-top:46px;border-top:1.5px solid #1c1c1a;padding-top:8px}
+  .vendors{margin-top:34px;padding-top:14px;border-top:1px solid #d8d5c9;font-size:12.5px;color:#8a877c}
+  .vendors a{color:#6b6b66;text-underline-offset:3px}
+  .vendors a:hover{color:#1c1c1a}
   .faq h2{font-size:21px;margin:14px 0 6px}
   .faq details{border-bottom:1px solid #d8d5c9;padding:10px 0}
   .faq summary{cursor:pointer;font-size:16.5px}
@@ -501,6 +504,7 @@ is taken on faith and vendors only move on prices that check out.</p>
 <details><summary>Will it buy anything on its own?</summary><p class="note">Never. The run ends at the best offer and waits. Nothing is bought before you approve it.</p></details>
 <details><summary>Nothing happened. What now?</summary><p class="note">Ask your agent for the session link, or tell it the keyphrase again and ask it to follow the protocol at <code>/llms.txt</code>.</p></details>
 </div>
+<footer class="vendors">Simulated vendors: <a href="https://basecamp.barter.computer">Basecamp Supply</a> · <a href="https://ridgeline.barter.computer">Ridgeline Outfitters</a></footer>
 <script>
 (function rotate() {
   const el = document.getElementById('rotator');
@@ -599,6 +603,9 @@ function eventDetailLines(e, proofs = []) {
   if (e.note) lines.push(`Vendor note: ${e.note}`);
   if (e.style) lines.push(`Move style: ${e.style}`);
   if (e.source) lines.push(`Decision source: ${e.source}`);
+  if (typeof e.stockUnits === "number") lines.push(`Stock picture: about ${e.stockUnits} units${e.stockPosture ? ` (${e.stockPosture})` : ""}. Simulated for this demo company.`);
+  if (typeof e.discountUsedPct === "number") lines.push(`Discount picture: ${e.discountUsedPct}% of the opening ask used${typeof e.headroomToCeilingPct === "number" ? `, ${e.headroomToCeilingPct}% of headroom left above the bottom line` : ""}.`);
+  if (typeof e.promoPoolRemainingPct === "number") lines.push(`Promo pool: ${e.promoPoolRemainingPct}% remaining this month.`);
   if (type === "proof") {
     const proof = proofs.find((pr) => String(pr.hash).startsWith(String(e.hash ?? "")))
       ?? proofs.find((pr) => pr.attested_price === e.attestedPrice && (!e.host || pr.host === e.host));
@@ -669,9 +676,6 @@ const page = (rec, base) => {
   .tcall{overflow:hidden;text-overflow:ellipsis}
   .tmove{margin-left:auto;flex:none;font-size:11px}
   .tmove.down{color:#137333}.tmove.up{color:#b3261e}.tmove.flat{color:#6b6b66}
-  .replaybar{display:flex;gap:12px;align-items:center;margin:18px 0 -8px;font-size:13.5px}
-  .replaybar button{font:inherit;font-size:13.5px;padding:7px 12px;border:1.5px solid #1c1c1a;background:#1c1c1a;color:#fbfaf7;cursor:pointer}
-  .replaybar span{color:#6b6b66}
   .trow[role="button"]{cursor:pointer}
   .trow.active{background:#efede6;box-shadow:inset 3px 0 #1c1c1a}
   .tdetail{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.55;background:#f4f2ea;border-bottom:1px solid #d8d5c9;padding:8px 12px 9px 42px;white-space:normal}
@@ -679,7 +683,6 @@ const page = (rec, base) => {
 <h1>${esc(rec.product || "Your barter")}</h1>
 <p class="lede">Session ${rec.id} · <span id="statusText">${esc(rec.status)}</span>${rec.budget != null ? ` · budget $${rec.budget}` : ""}${rec.keyphrase ? ` · keyphrase <code>${esc(rec.keyphrase)}</code>` : ""}</p>
 <div id="bestSlot">${rec.best_price != null ? `<div class="best"><div>Best offer${rec.best_vendor ? ` from ${esc(rec.best_vendor)}` : ""}</div><div class="price">$${rec.best_price}</div></div>` : ""}</div>
-<div class="replaybar"><button id="replayBtn" type="button">Replay actions</button><span id="replayStatus">Select any action to inspect the recorded trace.</span></div>
 <div class="tree">
 <div class="troot"><span class="ttag">SESSION</span><span class="tcall">session(product="${esc(rec.product)}", status="<span id="rootStatus">${esc(rec.status)}</span>")</span><span class="tmove flat" id="callCount">${tree.count} calls</span></div>
 <div class="tchildren" id="tchildren">${tree.rows || `<div class="trow"><span class="tcall">waiting for the agent to start</span></div>`}</div>
@@ -701,6 +704,9 @@ function detailLines(d){
   if (d.note) lines.push('Vendor note: ' + d.note);
   if (d.style) lines.push('Move style: ' + d.style);
   if (d.source) lines.push('Decision source: ' + d.source);
+  if (typeof d.stockUnits === 'number') lines.push('Stock picture: about ' + d.stockUnits + ' units' + (d.stockPosture ? ' (' + d.stockPosture + ')' : '') + '. Simulated for this demo company.');
+  if (typeof d.discountUsedPct === 'number') lines.push('Discount picture: ' + d.discountUsedPct + '% of the opening ask used' + (typeof d.headroomToCeilingPct === 'number' ? ', ' + d.headroomToCeilingPct + '% of headroom left above the bottom line' : '') + '.');
+  if (typeof d.promoPoolRemainingPct === 'number') lines.push('Promo pool: ' + d.promoPoolRemainingPct + '% remaining this month.');
   if (!d.reason && !d.note && !d.message) lines.push('Conversation trace: no natural-language message is recorded for this step. The agents exchanged structured protocol data, and the fields below are the trace.');
   const fields = Object.entries(d).filter(([k,v]) => !['type','t','presentationB64'].includes(k) && v !== undefined && v !== null && v !== '').map(([k,v]) => k + '=' + (typeof v === 'object' ? JSON.stringify(v) : v));
   if (fields.length) lines.push('Recorded fields: ' + fields.join(' · '));
@@ -728,36 +734,6 @@ treeEl.addEventListener('click', e => {
 treeEl.addEventListener('keydown', e => {
   const row = e.target.closest('.trow[data-type]');
   if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleRow(row); }
-});
-let replayTimer = null;
-const replayBtn = document.getElementById('replayBtn');
-const replayStatus = document.getElementById('replayStatus');
-function stopReplay(label){
-  if (replayTimer) clearInterval(replayTimer);
-  replayTimer = null;
-  replayBtn.textContent = 'Replay actions';
-  if (label) replayStatus.textContent = label;
-}
-replayBtn.addEventListener('click', () => {
-  if (replayTimer) { stopReplay('Replay stopped. Select any action to inspect the recorded trace.'); return; }
-  const rows = [...treeEl.querySelectorAll('.trow[data-type]')];
-  if (!rows.length) { replayStatus.textContent = 'No actions recorded yet.'; return; }
-  rows.forEach(row => { row.style.display = 'none'; setRowOpen(row, false); });
-  let i = 0;
-  replayBtn.textContent = 'Stop replay';
-  const step = () => {
-    if (i >= rows.length) { stopReplay('Replay complete. Select any action to inspect the recorded trace.'); replayBtn.textContent = 'Replay again'; return; }
-    const row = rows[i];
-    row.style.display = '';
-    setRowOpen(row, true);
-    row.scrollIntoView({ block: 'nearest' });
-    replayStatus.textContent = 'Step ' + (i + 1) + ' of ' + rows.length + ': ' + (row.querySelector('.tcall')?.textContent || row.dataset.type);
-    const cc = document.getElementById('callCount');
-    if (cc) cc.textContent = (i + 1) + ' calls';
-    i++;
-  };
-  step();
-  replayTimer = setInterval(step, 900);
 });
 function appendRow(d){
   const rawType = String(d.type || 'event');

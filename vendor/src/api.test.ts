@@ -167,6 +167,10 @@ describe("bartering tactics", () => {
       reason: "verified lower offer",
       source: "deterministic fallback",
     });
+    expect(typeof counter?.stockUnits).toBe("number");
+    expect(counter?.stockPosture).toMatch(/stock/);
+    expect(counter?.discountUsedPct).toBeGreaterThan(0);
+    expect(typeof counter?.headroomToCeilingPct).toBe("number");
   });
 });
 
