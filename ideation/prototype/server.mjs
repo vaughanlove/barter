@@ -747,13 +747,19 @@ async function findPrice(body) {
   if (target.protocol !== "https:" || /^(localhost|127\.|10\.|192\.168\.|169\.254\.)/.test(target.hostname)) {
     return { status: 400, out: { error: "url must be a public https URL" } };
   }
-  const pageRes = await fetch(target, {
-    headers: { "User-Agent": "barter-price-finder/0.1", "Accept-Encoding": "identity" },
-    signal: AbortSignal.timeout(20_000),
-    redirect: "follow",
-  }).catch(() => null);
-  if (!pageRes || !pageRes.ok) {
-    return { status: 502, out: { error: `page fetch failed: ${pageRes?.status ?? "network"}` } };
+  let pageRes;
+  try {
+    pageRes = await fetch(target, {
+      headers: { "User-Agent": "barter-price-finder/0.1", "Accept-Encoding": "identity" },
+      signal: AbortSignal.timeout(20_000),
+      redirect: "follow",
+    });
+  } catch (err) {
+    const cause = err?.cause?.message ?? err?.cause?.code ?? "";
+    return { status: 200, out: { price: null, error: `page fetch failed: ${err?.message ?? "network"} ${cause}`.trim() } };
+  }
+  if (!pageRes.ok) {
+    return { status: 200, out: { price: null, error: `page fetch failed: HTTP ${pageRes.status}` } };
   }
   const html = (await pageRes.text()).slice(0, 1_000_000);
   const fullText = html
@@ -786,7 +792,7 @@ async function findPrice(body) {
     }),
     signal: AbortSignal.timeout(30_000),
   }).catch(() => null);
-  if (!res || !res.ok) return { status: 502, out: { error: "classifier call failed" } };
+  if (!res || !res.ok) return { status: 200, out: { price: null, error: `classifier call failed: HTTP ${res?.status ?? "network"}` } };
   const data = await res.json().catch(() => ({}));
   let parsed = {};
   try {
