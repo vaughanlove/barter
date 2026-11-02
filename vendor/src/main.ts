@@ -102,7 +102,7 @@ fetch("/api/tactics")
   .then((t: Tactics) => {
     document.querySelector("#vendorName")!.textContent = t.vendor;
     document.querySelector("#vendorTitle")!.textContent = t.vendor;
-    document.querySelector("#tacticPolicy")!.textContent = `“${t.policy}”`;
+    document.querySelector("#tacticPolicy")!.textContent = `“${t.policy.split(". ")[0]}.”`;
 
     const opening = 100 * (1 + t.opening.markupPct / 100);
     const floor = 100 * (1 - t.discountCeilingPct / 100);
@@ -112,11 +112,9 @@ fetch("/api/tactics")
     const b = t.business;
     document.querySelector("#businessWhy")!.textContent = b.why;
     const metrics: [string, string][] = [
-      ["Stock on hand", `${b.stockUnits.toLocaleString()} units`],
-      ["Inventory cover", `${b.stockCoverMonths} months`],
-      ["Monthly demand", `${b.monthlyDemandUnits} units`],
-      ["Reload landing", `${b.monthlyReloadUnits} units next month`],
-      ["Days left this month", `${b.daysLeftInMonth}`],
+      ["Stock cover", `${b.stockCoverMonths} months`],
+      ["Reload", `${b.monthlyReloadUnits} units next month`],
+      ["Days left", `${b.daysLeftInMonth} this month`],
       ["Sales pace", `${b.salesPacePct}% of target`],
     ];
     document.querySelector("#businessMetrics")!.innerHTML = metrics
@@ -128,17 +126,13 @@ fetch("/api/tactics")
       ? "We price to move stock. Show us a proven lower price and our agent can discount hard to win the sale today."
       : "We price to protect margin. Show us a proven lower price and our agent will beat it carefully, a little at a time.";
     document.querySelector("#exampleWhy")!.textContent = bold
-      ? `Our opening quote sits ${t.opening.markupPct}% above the proven price. We can come down to ${money(floor)} on a $100 item because moving stock matters more to us than the last few dollars. Below that, we stop.`
-      : `Our opening quote sits ${t.opening.markupPct}% above the proven price. We can come down to ${money(floor)} on a $100 item, but no further: that is where this deal stops making sense for us.`;
+      ? "Moving stock matters more to us than the last few dollars. Below that floor, we stop."
+      : "Below that floor, the deal stops making sense for us.";
 
-    const pool = t.monthlyPromoPoolUsd;
     const rows: [string, string][] = [
-      ["What makes us move", "A lower price proven with TLSNotary. A claim in chat changes nothing."],
-      ["How we move", bold ? `In bold steps, aiming about ${t.counterStyle.pct}% under the proven rival price.` : "One cent under the proven rival price at a time."],
-      ["Our discount budget", pool === null ? "No fixed monthly pool. The discount ceiling is the limit." : pool <= 1000 ? `A limited $${pool.toLocaleString()} monthly promo pool, spent slowly.` : `A $${pool.toLocaleString()} monthly promo pool, sized for winning volume.`],
-      ["What our agent weighs", "Stock cover, days left this month, the reload coming in, sales pace, discount already given, and promo budget remaining. Heavy stock near month end argues for a bigger cut. Lean stock argues for holding price."],
-      ["Where we stop", `At ${t.discountCeilingPct}% below the proven starting price. That floor is checked by code, not by mood.`],
-      ["If our pricing model is out", t.fallback],
+      ["What makes us move", "A lower price, proven. A claim changes nothing."],
+      ["How we move", bold ? `Bold steps, about ${t.counterStyle.pct}% under the proven price.` : "One cent under the proven price at a time."],
+      ["Where we stop", `${t.discountCeilingPct}% below the proven price, checked by code.`],
     ];
     document.querySelector("#tacticGrid")!.innerHTML = rows
       .map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${esc(value)}</dd></div>`)
