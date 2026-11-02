@@ -11,6 +11,11 @@
  */
 import { createServer } from "node:http";
 import { createHash, randomBytes } from "node:crypto";
+import { setDefaultResultOrder } from "node:dns";
+
+// Railway egress can prefer IPv6, which some upstreams answer
+// differently (Meta API returned model_not_found over it). IPv4 first.
+setDefaultResultOrder("ipv4first");
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";

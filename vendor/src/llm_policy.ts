@@ -1,3 +1,8 @@
+import { setDefaultResultOrder } from "node:dns";
+
+// Match the landing service: prefer IPv4 egress for the Meta API.
+setDefaultResultOrder("ipv4first");
+
 // Qualitative vendor strategy via Muse Spark.
 //
 // The vendor's written policy (VENDOR_POLICY_TEXT) describes how the
