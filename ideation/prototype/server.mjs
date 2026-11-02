@@ -383,7 +383,11 @@ conceding any price.
 1. Anchor. The first real online price for the product is proved
    with the proof service; any public HTTPS host is provable. That
    first proof is the anchor both vendors derive from, and it is
-   stored in the session record at this point. A price locator is
+   stored in the session record at this point. One proved reference
+   price is enough: the run needs no survey of shops, no comparison
+   across retailers, and no backup anchor. Once a price is proved,
+   the next step is quoting. If a page will not prove, one
+   alternative source is a reasonable retry, not a research project. A price locator is
    available for arbitrary pages: POST ${base}/find-price
    {"url": "<page url>", "product": "<product>"} returns
    {price, snippet, confidence}. The locator only locates; the proof
@@ -429,8 +433,8 @@ const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const STYLE = `
-  body{font-family:Georgia,'Times New Roman',serif;max-width:680px;margin:56px auto;padding:0 20px;color:#1c1c1a;background:#fbfaf7}
-  h1{font-size:34px;margin:0 0 10px;line-height:1.15}
+  body{font-family:Gelasio,Georgia,'Times New Roman',serif;max-width:680px;margin:56px auto;padding:0 20px;color:#1c1c1a;background:#ffffff}
+  h1{font-size:40px;margin:0 0 10px;line-height:1.15;font-weight:700}
   .lede{font-size:17px;line-height:1.55;color:#3d3d38}
   .say{background:#fff;border:1.5px solid #1c1c1a;padding:16px 18px;font-size:16.5px;line-height:1.5;margin:22px 0}
   label{display:block;font-size:13px;letter-spacing:.03em;margin:16px 0 6px;color:#6b6b66}
@@ -446,10 +450,44 @@ const STYLE = `
   .best .price{font-size:32px}
   .badge{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;border:1px solid #1c1c1a;padding:1px 6px}
   li{margin:6px 0;line-height:1.5}
-  .cardwrap{position:relative;max-width:560px;margin:38px auto 34px}
-  .say{margin:0;padding:38px 36px}
-  .quote{font-size:29px;line-height:1.3;margin:0}
-  .copychip{position:absolute;right:18px;bottom:-15px;margin:0;font-size:12.5px;padding:7px 13px;box-shadow:3px 3px 0 #1c1c1a}
+  .cardwrap{position:relative;margin:38px 0 34px}
+  .grules{display:flex;flex-direction:column;gap:3px}
+  .grules i{display:block;height:1px;background:#1c1c1a}
+  .kicker{color:#C70000;font-weight:700;font-size:17px;padding-top:12px}
+  .pullquote{position:relative;padding:16px 0 28px;font-size:36px;font-style:italic;line-height:45px}
+  .pullquote::before{content:"\\201C";position:absolute;left:-34px;top:14px;font-size:64px;line-height:64px;color:#C70000;font-weight:700;font-style:normal}
+  .pullquote .roman{font-style:normal}
+  .pullquote #rotator{border-bottom:1.5px solid #1c1c1a}
+  .qrule{height:1px;background:#1c1c1a}
+  .underquote{display:flex;gap:24px;align-items:center;padding-top:16px}
+  .underquote .note{flex:1;font-size:15px;line-height:23px}
+  .copybtn{flex:none;margin:0;background:#1c1c1a;color:#ffffff;border:1px solid #1c1c1a;box-shadow:3px 3px 0 #1c1c1a;font-size:14px;padding:9px 16px;cursor:pointer}
+  .howbtn{display:inline-block;margin-top:14px;background:#1c1c1a;color:#ffffff;border:1px solid #1c1c1a;box-shadow:3px 3px 0 #1c1c1a;font-size:14px;line-height:16px;padding:9px 16px;text-decoration:none}
+  .howbtn:hover{background:#C70000;border-color:#C70000}
+  .ladder{margin:42px 0 0;border-top:1.5px solid #1c1c1a;padding-top:14px}
+  .ladder h2{font-size:21px;margin:0 0 6px}
+  .ladder .lcap{font-size:14.5px;color:#6b6b66;line-height:1.5;margin:10px 0 0}
+  .lsteps{list-style:none;margin:14px 0 0;padding:0}
+  .lstep{display:flex;align-items:center;gap:14px;padding:8px 0;border-bottom:1px solid #e3e1d8;font-size:15px}
+  .lstep .lname{flex:1}
+  .licon{vertical-align:-3px;margin-right:7px}
+  .lbar{height:9px;background:#1c1c1a;flex:none}
+  .lstep .lprice{font-weight:700;white-space:nowrap}
+  .lstep.best .lprice{color:#C70000}
+  .lstep.best .lbar{background:#C70000}
+  .pflow{display:flex;align-items:stretch;gap:10px;margin:16px 0 0}
+  .pnode{flex:1;border:1px solid #1c1c1a;padding:12px 14px;display:flex;flex-direction:column;gap:4px;justify-content:center}
+  .pnode .ptag{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#6b6b66}
+  .pnode strong{font-size:16px}
+  .pnode .pprice{font-size:20px;font-weight:700}
+  .pnode .psub, .plock .psub{display:block;font-size:13px;line-height:1.45;color:#6b6b66}
+  .pnode.proof{align-items:flex-start}
+  .parrow{align-self:center;font-size:22px;color:#C70000;flex:none}
+  .pvendors{flex:1.2;display:flex;flex-direction:column;gap:6px;justify-content:center}
+  .pvrow{display:flex;justify-content:space-between;border:1px solid #d8d5c9;padding:8px 12px;font-size:14.5px}
+  .plock{display:flex;gap:14px;align-items:center;margin-top:14px;border:1.5px solid #1c1c1a;padding:12px 14px}
+  .plock strong{font-size:17px;color:#C70000}
+  @media (max-width: 640px){ .pflow{flex-direction:column} .parrow{transform:rotate(90deg)} }
   .faq{margin-top:46px;border-top:1.5px solid #1c1c1a;padding-top:8px}
   .vendors{margin-top:34px;padding-top:14px;border-top:1px solid #d8d5c9;font-size:12.5px;color:#8a877c}
   .vendors a{color:#6b6b66;text-underline-offset:3px}
@@ -462,13 +500,14 @@ const STYLE = `
   @media (prefers-reduced-motion: reduce){ .rotator{border-bottom-style:dotted} }
   @media (max-width: 640px){
     body{margin:30px auto;padding:0 16px}
-    h1{font-size:41px}
-    .lede{font-size:19.5px;line-height:1.62}
-    .cardwrap{margin:30px auto 30px}
-    .say{padding:30px 24px}
-    .quote{font-size:33px;line-height:1.35}
+    h1{font-size:36px}
+    .lede{font-size:18px;line-height:1.6}
+    .cardwrap{margin:30px 0}
+    .pullquote{font-size:29px;line-height:38px;padding-left:26px}
+    .pullquote::before{left:-4px;font-size:48px;line-height:48px}
+    .underquote{flex-direction:column;align-items:flex-start;gap:12px}
+    .lbar{display:none}
     .rotator{white-space:normal}
-    .copychip{font-size:14.5px;padding:11px 17px;bottom:-18px;right:12px}
     .faq summary{font-size:18.5px;padding:4px 0}
     .faq details p{font-size:15.5px}
     label{font-size:14.5px}
@@ -476,12 +515,49 @@ const STYLE = `
     button{font-size:16px;padding:12px 18px}
     small, .note{font-size:14.5px}
   }
+  @media (prefers-color-scheme: dark){
+    body{background:#131313;color:#ecece7}
+    .lede{color:#c9c9c1}
+    small, .note, .underquote .note{color:#a9a9a1}
+    a{color:#ecece7}
+    code{background:#2a2a26;color:#ecece7}
+    .grules i, .qrule{background:#ecece7}
+    .pullquote #rotator{border-bottom-color:#ecece7}
+    .kicker{color:#ff5147}
+    .pullquote::before{color:#ff5147}
+    .ladder{border-top-color:#ecece7}
+    .ladder .lcap{color:#a9a9a1}
+    .lstep{border-bottom-color:#2c2c28}
+    .lbar{background:#ecece7}
+    .lstep.best .lprice{color:#ff5147}
+    .lstep.best .lbar{background:#ff5147}
+    .pnode{border-color:#ecece7}
+    .pnode .ptag, .pnode .psub, .plock .psub{color:#a9a9a1}
+    .pvrow{border-color:#3a3a34}
+    .plock{border-color:#ecece7}
+    .plock strong{color:#ff5147}
+    .pnode svg, .plock svg{stroke:#ff5147}
+    .faq{border-top-color:#ecece7}
+    .faq details{border-bottom-color:#3a3a34}
+    .vendors{border-top-color:#3a3a34;color:#8f8f89}
+    .vendors a{color:#b9b9b1}
+    .vendors a:hover{color:#ffffff}
+    .copybtn{background:#ecece7;color:#131313;border-color:#ecece7;box-shadow:3px 3px 0 #ecece7}
+    .howbtn{background:#ecece7;color:#131313;border-color:#ecece7;box-shadow:3px 3px 0 #ecece7}
+    .howbtn:hover{background:#ff5147;border-color:#ff5147;color:#131313}
+    input{background:#1c1c1a;color:#ecece7;border-color:#4a4a44}
+  }
 `;
 
 const landingPage = (base, missing = false) => {
   const phrase = genKeyphrase();
   const since = Date.now();
   return `<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gelasio:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
 <title>Barter</title><style>${STYLE}</style>
 <h1>Ask your agent to barter for you.</h1>
 <p class="lede">Bring your own Muse. Point it at barter.computer and watch it
@@ -492,8 +568,30 @@ cryptographically verifiable with
 <a href="https://github.com/tlsnotary/tlsn">TLSNotary</a>, so no price
 is taken on faith and vendors only move on prices that check out.</p>
 <div class="cardwrap">
-<div class="say"><p class="quote">&ldquo;Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on <span class="rotator" id="rotator">carpe deodorant</span>. Keyphrase: ${phrase}&rdquo;</p></div>
-<button class="copychip" onclick="navigator.clipboard.writeText('Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on [your item]. Keyphrase: ${phrase}');this.textContent='Copied'">Copy prompt</button>
+<div class="grules"><i></i><i></i><i></i><i></i></div>
+<div class="kicker">Say this to your agent</div>
+<div class="pullquote">
+<div>Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me</div>
+<div>the best price on <span class="rotator" id="rotator">carpe deodorant</span>.</div>
+<div>Keyphrase: <span class="roman">${phrase}&rdquo;</span></div>
+</div>
+<div class="qrule"></div>
+<div class="underquote">
+<p class="note">Leave this page open after you send it. It jumps to your agent&rsquo;s session by itself.</p>
+<button class="copybtn" onclick="navigator.clipboard.writeText('Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on [your item]. Keyphrase: ${phrase}');this.textContent='Copied'">Copy prompt</button>
+</div>
+</div>
+<div class="ladder">
+<h2>What the protocol makes possible</h2>
+<ol class="lsteps">
+<li class="lstep"><span class="lname">Your agent finds a price online</span><span class="lbar" style="width:142px"></span><span class="lprice">$17.19</span></li>
+<li class="lstep"><span class="lname"><svg class="licon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#C70000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>Proof generated: a provable presentation of that price</span><span class="lbar" style="width:142px"></span><span class="lprice">$17.19</span></li>
+<li class="lstep"><span class="lname">Vendors stocking the product verify the proof</span><span class="lbar" style="width:146px"></span><span class="lprice">verified</span></li>
+<li class="lstep"><span class="lname">Multiple rounds of counter-offers, each backed by its own proof</span><span class="lbar" style="width:138px"></span><span class="lprice">$16.65</span></li>
+<li class="lstep best"><span class="lname"><svg class="licon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#C70000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Best price locked, awaiting your approval</span><span class="lbar" style="width:130px"></span><span class="lprice">$15.67</span></li>
+</ol>
+<p class="lcap">Prices from a real run. The vendors are any company agents; the proof is what lets strangers negotiate without trusting each other&rsquo;s claims. <a href="/s/${REFERENCE_SESSION}">See this run</a></p>
+<a class="howbtn" href="/how-it-works">How it works</a>
 </div>
 <div class="faq">
 <h2>Questions</h2>
@@ -549,6 +647,116 @@ async function poll() {
 poll();
 </script>`;
 };
+
+// Reference run linked as public evidence (Dr. Bronner soap).
+const REFERENCE_SESSION = "A3CECA";
+
+const howItWorksPage = (base) => `<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gelasio:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+<title>How Barter works</title><style>${STYLE}
+  .flow{display:flex;gap:8px;align-items:stretch;margin:18px 0}
+  .fbox{flex:1;border:1.5px solid #1c1c1a;padding:10px 12px;font-size:14px;line-height:1.45}
+  .fbox b{display:block;font-size:15px;margin-bottom:4px}
+  .farrow{align-self:center;color:#C70000;font-size:20px;flex:none}
+  .steps{margin:12px 0;padding-left:22px;line-height:1.6;font-size:15.5px}
+  .steps li{margin:7px 0}
+  .trust{border:1.5px solid #1c1c1a;padding:14px 16px;margin:18px 0;font-size:15px;line-height:1.6}
+  .back{font-size:14px}
+  h2{font-size:22px;margin:30px 0 8px}
+  p, li{line-height:1.6}
+  @keyframes flowpulse{ 0%,18%{border-color:#C70000;box-shadow:3px 3px 0 #C70000} 30%,100%{border-color:#1c1c1a;box-shadow:none} }
+  .flow .fbox{animation:flowpulse 6s ease-in-out infinite}
+  .flow .fbox:nth-child(3){animation-delay:1.2s}
+  .flow .fbox:nth-child(5){animation-delay:2.4s}
+  .flow .fbox:nth-child(7){animation-delay:3.6s}
+  @media (max-width:640px){ .flow{flex-direction:column} .farrow{transform:rotate(90deg)} }
+  @media (prefers-color-scheme: dark){ .fbox,.trust{border-color:#ecece7} .flow .fbox{animation-name:flowpulse-dark} @keyframes flowpulse-dark{ 0%,18%{border-color:#ff5147;box-shadow:3px 3px 0 #ff5147} 30%,100%{border-color:#ecece7;box-shadow:none} } }
+  @media (prefers-reduced-motion: reduce){ .flow .fbox{animation:none} }
+</style>
+<p class="back"><a href="/">&larr; Barter</a></p>
+<h1>How Barter works</h1>
+<p class="lede">Barter is a protocol, not a store. Your own agent learns it from
+<a href="/llms.txt">one text file</a>, proves a real price, and barters with
+company agents who only move on prices they can verify themselves. The result
+is a negotiated price your agent could not simply claim into existence.</p>
+
+<h2>The flow</h2>
+<div class="flow">
+<div class="fbox"><b>Your personal agent</b>Finds one real price online and proves it.</div>
+<div class="farrow">&rarr;</div>
+<div class="fbox"><b>Proof</b>A TLSNotary presentation: these bytes came from that host.</div>
+<div class="farrow">&rarr;</div>
+<div class="fbox"><b>Company agents</b>Verify the proof themselves, then quote and counter.</div>
+<div class="farrow">&rarr;</div>
+<div class="fbox"><b>Session record</b>Every step written down as it happens. Best offer waits for you.</div>
+</div>
+
+<h2>One barter round</h2>
+<ol class="steps">
+<li>The personal agent proves the lower current quote and stores that proof in the session record.</li>
+<li>It presents the proof to the other vendor.</li>
+<li>That vendor verifies the presentation itself and reads the price from the verified transcript, never from a claim.</li>
+<li>Its policy decides the counter, subject to a hard floor. The new quote is proved and carried back the same way.</li>
+<li>Rounds alternate until a vendor holds at its floor or six exchanges pass. The record closes with the best price and an approval request.</li>
+</ol>
+
+<h2>How the personal agent follows the protocol</h2>
+<p>The agent is the entrypoint. There is no product form on this site. A run
+adheres to the published specification: create a session first, prove one
+reference price (one is enough), open conversations with both vendors using
+that proof, store every proof when it is presented, report each quote and
+counter to the session record, and finish with the best price, the full
+session link, and a question asking approval. Chat stays minimal because the
+session record is the detailed account. A three-word keyphrase in the prompt
+lets the open landing page follow the same run.</p>
+<p>No compatible agent handy? The reference client <code>pap</code> in the
+public repository runs the same protocol end to end.</p>
+
+<h2>How the vendors are set up</h2>
+<p>Today the two companies are simulated, on purpose: the protocol is the
+product being demonstrated, not their stock. Each vendor is the same agent
+build on its own domain, with its own discovery document, written negotiation
+policy, opening markup, and discount ceiling.</p>
+<ol class="steps">
+<li><a href="https://basecamp.barter.computer">Basecamp Supply</a>: lean stock on a two-week restock cycle. Opens at the proven price plus 5%, can discount up to 8%, moves a cent at a time, and spends a small promo pool slowly.</li>
+<li><a href="https://ridgeline.barter.computer">Ridgeline Outfitters</a>: deep stock on a four-week restock cycle. Opens at plus 2%, can discount up to 12%, and moves in bold steps to win the sale before the next reload lands.</li>
+</ol>
+<p>For each counter, Muse Spark may propose a price in the company's written
+style, weighing stock cover, restock timing, discount already used, and promo
+budget remaining. Deterministic code disposes: no verified proof means no
+movement, nothing goes below the floor, pool limits hold, and a hard-coded
+fallback takes over if the model is unavailable. Any requested item is quoted
+from the proven price; there is no fixed catalogue behind the demo.</p>
+
+<div class="trust">
+<b>What a proof does and does not say.</b> A presentation proves a response
+came from a named host over TLS. It does not prove the item is in stock, that
+the price is wise, or what checkout will finally charge. In this demo the
+prover and notary run in one service; in production the notary would be an
+independent operator. The protocol does not change.
+</div>
+
+<h2>Limitations</h2>
+<ol class="steps">
+<li>The companies, their stock pictures, and the purchase step are simulated. The proving, verification, negotiation, and session record are real.</li>
+<li>Prover and notary currently run in one service. A production deployment separates the notary operator from the prover.</li>
+<li>Proofs are generated serially and take seconds each. TLSNotary works over TLS 1.2 with small, uncompressed responses, so API-shaped pages prove far better than full HTML.</li>
+<li>The starting price comes from a page your agent chooses. Product variants and pack sizes can change what that price means, so check the anchor in the session record.</li>
+<li>Agent behaviour varies. Some agents follow the specification end to end, some improvise, and some stop early. The session record shows what actually happened either way.</li>
+<li>When Muse Spark is unavailable, vendor counters come from a deterministic fallback, and the decision trace in the record says which path decided.</li>
+<li>Session links are public to anyone who has them, and the demo endpoints are unauthenticated. That is demo scope, not a production posture.</li>
+<li>Nothing is bought through Barter. A run ends at a best offer, outside checkout, waiting for a person to approve it.</li>
+</ol>
+
+<h2>See it</h2>
+<p><a href="/s/${REFERENCE_SESSION}">A completed run, with proofs and counters in the record</a> ·
+<a href="/llms.txt">The protocol specification agents read</a> ·
+<a href="https://github.com/vaughanlove/barter">Code and architecture diagrams</a></p>
+<footer class="vendors">Simulated vendors: <a href="https://basecamp.barter.computer">Basecamp Supply</a> · <a href="https://ridgeline.barter.computer">Ridgeline Outfitters</a></footer>`;
 
 const fmtPrice = (n) => (typeof n === "number" ? `$${n}` : null);
 
@@ -1012,6 +1220,8 @@ export const server = createServer(async (req, res) => {
   try {
     if (req.method === "GET" && url.pathname === "/")
       return send(res, 200, landingPage(base, url.searchParams.get("missing") === "1"), "text/html");
+    if (req.method === "GET" && url.pathname === "/how-it-works")
+      return send(res, 200, howItWorksPage(base), "text/html");
     if (req.method === "GET" && url.pathname === "/follow") {
       const phrase = url.searchParams.get("phrase") ?? "";
       const byPhrase = phrase ? getSessionByKeyphrase(phrase) : null;

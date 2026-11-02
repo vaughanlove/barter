@@ -52,6 +52,15 @@ test("apex serves minimal Poppy discovery for the requested domain", async () =>
   const home = await (await fetch(`${base}/`)).text();
   assert.match(home, /Simulated vendors: <a href="https:\/\/basecamp\.barter\.computer">Basecamp Supply<\/a>/);
   assert.match(home, /<a href="https:\/\/ridgeline\.barter\.computer">Ridgeline Outfitters<\/a>/);
+  assert.match(home, /href="\/how-it-works"/);
+  assert.match(home, /href="\/s\/A3CECA"/);
+
+  const how = await (await fetch(`${base}/how-it-works`)).text();
+  assert.match(how, /How the personal agent follows the protocol/);
+  assert.match(how, /How the vendors are set up/);
+  assert.match(how, /What a proof does and does not say/);
+  assert.match(how, /Basecamp Supply/);
+  assert.match(how, /Ridgeline Outfitters/);
 });
 
 test("typed product creates a persisted session with a recap", async () => {

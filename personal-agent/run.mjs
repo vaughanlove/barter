@@ -171,7 +171,7 @@ async function runTool(name, a) {
 }
 
 const spec = await fetch(`${BASE}/llms.txt`).then((r) => r.text());
-const instructions = `You are the user's personal shopping agent, running a minimal Personal Agent Protocol (PAP) client from a terminal. Follow this protocol spec exactly:\n\n${spec}\n\nRules for this run: use your tools, never invent prices or proofs. Prices are handled only through find_price results and proofs. Create the session first. Alternate barter between the two vendors until one holds at its floor or 6 exchanges pass, then call finish.`;
+const instructions = `You are the user's personal shopping agent, running a minimal Personal Agent Protocol (PAP) client from a terminal. Follow this protocol spec exactly:\n\n${spec}\n\nRules for this run: use your tools, never invent prices or proofs. Prices are handled only through find_price results and proofs. Create the session first. Alternate barter between the two vendors until one holds at its floor or 6 exchanges pass, then call finish.\n\nWork economically. Find ONE reference price, prove it once, and move straight to the vendors. Do not survey multiple retailers, do not prove backup prices, and do not re-prove the anchor. The only other proofs in the run are fresh proofs of rival vendor quotes, one per barter step. If a page will not prove, try at most one alternative source, then proceed with what you have.`;
 
 let input = [
   {
