@@ -18,6 +18,16 @@ interface Tactics {
   decisionProcess: string;
   fallback: string;
   monthlyPromoPoolUsd: number | null;
+  business: {
+    stockUnits: number;
+    monthlyDemandUnits: number;
+    stockCoverMonths: number;
+    monthlyReloadUnits: number;
+    daysLeftInMonth: number;
+    salesPacePct: number;
+    urgency: string;
+    why: string;
+  };
 }
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -29,6 +39,12 @@ app.innerHTML = `
   <p class="vendor-name" id="vendorName">Barter Vendor</p>
   <h1 id="vendorTitle">A vendor that can be bargained with</h1>
   <p class="intro" id="vendorIntro">Loading how this business prices and discounts…</p>
+
+  <section class="business" aria-labelledby="businessTitle">
+    <h2 id="businessTitle">This month at this business</h2>
+    <p id="businessWhy">Loading the sales picture…</p>
+    <dl class="metric-strip" id="businessMetrics"></dl>
+  </section>
 
   <section class="example" aria-labelledby="exampleTitle">
     <h2 id="exampleTitle">What a discount looks like here</h2>
@@ -93,10 +109,24 @@ fetch("/api/tactics")
     document.querySelector("#exampleOpening")!.textContent = money(opening);
     document.querySelector("#exampleFloor")!.textContent = money(floor);
 
+    const b = t.business;
+    document.querySelector("#businessWhy")!.textContent = b.why;
+    const metrics: [string, string][] = [
+      ["Stock on hand", `${b.stockUnits.toLocaleString()} units`],
+      ["Inventory cover", `${b.stockCoverMonths} months`],
+      ["Monthly demand", `${b.monthlyDemandUnits} units`],
+      ["Reload landing", `${b.monthlyReloadUnits} units next month`],
+      ["Days left this month", `${b.daysLeftInMonth}`],
+      ["Sales pace", `${b.salesPacePct}% of target`],
+    ];
+    document.querySelector("#businessMetrics")!.innerHTML = metrics
+      .map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${esc(value)}</dd></div>`)
+      .join("");
+
     const bold = t.counterStyle.mode === "percent";
     document.querySelector("#vendorIntro")!.textContent = bold
-      ? "We carry stock to move. Show us a proven lower price and we will try to win the sale quickly."
-      : "We protect margin. Show us a proven lower price and we will beat it carefully, a little at a time.";
+      ? "We price to move stock. Show us a proven lower price and our agent can discount hard to win the sale today."
+      : "We price to protect margin. Show us a proven lower price and our agent will beat it carefully, a little at a time.";
     document.querySelector("#exampleWhy")!.textContent = bold
       ? `Our opening quote sits ${t.opening.markupPct}% above the proven price. We can come down to ${money(floor)} on a $100 item because moving stock matters more to us than the last few dollars. Below that, we stop.`
       : `Our opening quote sits ${t.opening.markupPct}% above the proven price. We can come down to ${money(floor)} on a $100 item, but no further: that is where this deal stops making sense for us.`;
@@ -106,7 +136,7 @@ fetch("/api/tactics")
       ["What makes us move", "A lower price proven with TLSNotary. A claim in chat changes nothing."],
       ["How we move", bold ? `In bold steps, aiming about ${t.counterStyle.pct}% under the proven rival price.` : "One cent under the proven rival price at a time."],
       ["Our discount budget", pool === null ? "No fixed monthly pool. The discount ceiling is the limit." : pool <= 1000 ? `A limited $${pool.toLocaleString()} monthly promo pool, spent slowly.` : `A $${pool.toLocaleString()} monthly promo pool, sized for winning volume.`],
-      ["What we weigh", "Stock on hand, discount already given, room left above our lowest price, and promo budget remaining."],
+      ["What our agent weighs", "Stock cover, days left this month, the reload coming in, sales pace, discount already given, and promo budget remaining. Heavy stock near month end argues for a bigger cut. Lean stock argues for holding price."],
       ["Where we stop", `At ${t.discountCeilingPct}% below the proven starting price. That floor is checked by code, not by mood.`],
       ["If our pricing model is out", t.fallback],
     ];

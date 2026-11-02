@@ -179,24 +179,59 @@ let input = [
     content: `Find me the best price on ${product}.${keyphrase ? `\nKeyphrase: ${keyphrase}` : ""}`,
   },
 ];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const retryableStatus = (s) => s === 408 || s === 429 || s >= 500;
+
+// One planner turn, retried briefly in memory. Retrying is safe at
+// this boundary: no tool has run for this turn yet, and all protocol
+// state (session, proofs, conversations) already lives server-side
+// or in `state`. The policy is fail fast: a couple of quick retries
+// for a single blip, then surface the upstream error instead of
+// stalling a run on a degraded API. Tool calls are deliberately
+// not retried here: barter is not idempotent, so a failed tool
+// result goes back to the planner as an error it can react to.
+async function plannerTurn() {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${API}/responses`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: MODEL,
+          instructions,
+          input,
+          tools: TOOLS,
+          include: ["web_search_call.results"],
+          max_output_tokens: 4000,
+        }),
+        signal: AbortSignal.timeout(90_000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) return data;
+      lastError = new Error(`Meta API ${res.status}: ${JSON.stringify(data).slice(0, 400)}`);
+      if (!retryableStatus(res.status)) throw lastError;
+    } catch (err) {
+      if (err === lastError) throw err;
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+    if (attempt < 3) {
+      const delay = 750 * attempt + Math.floor(Math.random() * 250);
+      console.error(`[pap] planner attempt ${attempt} failed (${lastError.message.slice(0, 120)}), retrying in ${Math.round(delay / 100) / 10}s`);
+      await sleep(delay);
+    }
+  }
+  throw lastError ?? new Error("planner failed");
+}
+
 let finalText = "";
 for (let turn = 0; turn < 40; turn++) {
-  const res = await fetch(`${API}/responses`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: MODEL,
-      instructions,
-      input,
-      tools: TOOLS,
-      include: ["web_search_call.results"],
-      max_output_tokens: 4000,
-    }),
-    signal: AbortSignal.timeout(180_000),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    console.error(`Meta API ${res.status}: ${JSON.stringify(data).slice(0, 400)}`);
+  let data;
+  try {
+    data = await plannerTurn();
+  } catch (err) {
+    console.error(`Meta API unavailable after retries: ${err.message}`);
+    if (state.sessionId) console.log(`${BASE}/s/${state.sessionId}`);
     process.exit(1);
   }
   const calls = (data.output ?? []).filter((o) => o.type === "function_call");

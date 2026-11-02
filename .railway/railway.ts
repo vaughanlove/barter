@@ -70,7 +70,7 @@ export default defineRailway(() => {
       VENDOR_FLOOR_PCT: "8",
       VENDOR_UNDERCUT_MODE: "penny",
       VENDOR_POLICY_TEXT:
-        "Cautious margin keeper. Beat a verified rival price by the smallest credible amount. Hold firm as you near your bottom line. Discounts come out of a limited monthly promo pool, so spend it slowly.",
+        "Margin keeper with lean stock and no pressure to clear. Beat a verified rival price by the smallest credible amount and hold firm near the bottom line. Selling one unit at full margin beats discounting ten. Discounts come out of a limited monthly promo pool, so spend it slowly.",
       VENDOR_MONTHLY_POOL_USD: "250",
       MODEL_API_KEY: preserve(),
       VERIFIER_URL: `${PROVE}/verify`,
@@ -95,7 +95,7 @@ export default defineRailway(() => {
       VENDOR_UNDERCUT_MODE: "percent",
       VENDOR_UNDERCUT_PCT: "5",
       VENDOR_POLICY_TEXT:
-        "Volume hunter with deep stock. Move in bold steps to win the deal quickly rather than shaving pennies. You may offer up to 20% off while the monthly promo budget lasts; winning the sale matters more than the last dollar of margin.",
+        "Volume seller carrying months of stock with a full reload landing next month. Near month end, turning inventory into revenue beats holding it for a better margin. Move in bold steps to win the sale today rather than shaving pennies. You may offer up to 20% off while the monthly promo budget lasts.",
       VENDOR_MONTHLY_POOL_USD: "100000",
       MODEL_API_KEY: preserve(),
       VERIFIER_URL: `${PROVE}/verify`,

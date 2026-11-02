@@ -63,6 +63,46 @@ function seededStock(sku: string): number {
   return 24 + (hash % 180);
 }
 
+// The business situation this vendor's agent is selling into. Company
+// level and simulated for the demo, but shaped like the numbers a real
+// operator would hand a sales agent: how much stock, how fast it
+// moves, when more lands, and how long is left to hit the month.
+function businessContext() {
+  const bold = (process.env.VENDOR_UNDERCUT_MODE ?? "penny") === "percent";
+  let hash = 0;
+  for (const ch of vendorName) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const monthlyDemand = 240 + (hash % 240);
+  const coverMonths = bold ? 2.6 + ((hash >> 3) % 10) / 10 : 0.9 + ((hash >> 3) % 5) / 10;
+  const stockUnits = Math.round(monthlyDemand * coverMonths);
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysLeft = daysInMonth - now.getDate();
+  const pacePct = Math.min(118, Math.round(((now.getDate() / daysInMonth) * (bold ? 82 : 97)) + ((hash >> 5) % 9)));
+  const reloadUnits = monthlyDemand;
+  const overstocked = coverMonths >= 2;
+  const monthEndPressure = daysLeft <= 10;
+  const urgency = overstocked && monthEndPressure
+    ? "high"
+    : overstocked || pacePct < 85
+      ? "rising"
+      : "low";
+  const why = urgency === "high"
+    ? `We are carrying ${coverMonths.toFixed(1)} months of stock, another ${reloadUnits} units land next month, and there are ${daysLeft} days left to sell. Discounting now is cheaper than holding this inventory.`
+    : urgency === "rising"
+      ? `Stock cover is ${coverMonths.toFixed(1)} months against ${monthlyDemand} units a month of demand. We will deal, but we are not in a rush.`
+      : `Stock is lean at ${coverMonths.toFixed(1)} months of cover and sales are pacing at ${pacePct}% of target. Margin matters more than speed.`;
+  return {
+    stockUnits,
+    monthlyDemandUnits: monthlyDemand,
+    stockCoverMonths: Math.round(coverMonths * 10) / 10,
+    monthlyReloadUnits: reloadUnits,
+    daysLeftInMonth: daysLeft,
+    salesPacePct: pacePct,
+    urgency,
+    why,
+  };
+}
+
 function stockPosture(units: number): string {
   if (units >= 120) return "deep stock";
   if (units >= 50) return "healthy stock";
@@ -294,6 +334,7 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
           "Muse Spark may propose a counter in the written policy style. A deterministic guard can reject it, clamp it to the discount ceiling, or replace it.",
         fallback: "Without a usable model proposal, the price steps down 8%, then 5%, then 3% as it nears the discount ceiling.",
         monthlyPromoPoolUsd: pool > 0 ? pool : null,
+        business: businessContext(),
       });
       return true;
     }

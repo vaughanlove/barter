@@ -143,6 +143,10 @@ describe("bartering tactics", () => {
     });
     expect(body.opening).toMatchObject({ markupPct: 2 });
     expect(body.counterStyle).toMatchObject({ mode: "percent", pct: 5 });
+    const business = body.business as Record<string, unknown>;
+    expect(business.stockCoverMonths).toBeGreaterThanOrEqual(2.6);
+    expect(typeof business.daysLeftInMonth).toBe("number");
+    expect(typeof business.why).toBe("string");
   });
 
   it("records why a counter was made and which decision path made it", async () => {
