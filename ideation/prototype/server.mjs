@@ -201,6 +201,16 @@ const emit = (id, type, data) => {
   return true;
 };
 
+// Steps that persist without going through emit (stored proofs, vendor
+// OTEL verdicts) still belong on the live session page. Push them to
+// any connected /s/{id} stream so live matches a refresh.
+function broadcastToSession(id, ev) {
+  const s = sessions.get(id);
+  if (!s) return;
+  s.events.push(ev);
+  for (const res of s.clients) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+}
+
 // --- Control panel log store (per session) --------------------------------
 // Logs arrive from the prototype's own session events and from any service
 // emitting OTLP/HTTP JSON logs (e.g. the vendor with
@@ -217,6 +227,7 @@ function pushLog(sessionId, event, attrs = {}, alreadyPersisted = false) {
   if (getSessionRec(id)) {
     if (!alreadyPersisted) persistEvent(id, event, attrs);
     applyVendorVerdict(id, event, attrs);
+    if (!alreadyPersisted) broadcastToSession(id, { t: log.t, type: event, ...attrs });
   }
   const payload = `data: ${JSON.stringify({ kind: "log", log })}\n\n`;
   for (const res of panelClients) res.write(payload);
@@ -235,10 +246,13 @@ function otelValue(v) {
 function ingestOtlp(body) {
   let count = 0;
   for (const rl of body.resourceLogs ?? []) {
+    const resourceAttrs = {};
+    for (const a of rl.resource?.attributes ?? []) resourceAttrs[a.key] = otelValue(a.value);
     for (const sl of rl.scopeLogs ?? []) {
       for (const rec of sl.logRecords ?? []) {
         const attrs = {};
         for (const a of rec.attributes ?? []) attrs[a.key] = otelValue(a.value);
+        if (!attrs.vendor && resourceAttrs["service.name"]) attrs.vendor = resourceAttrs["service.name"];
         const event = attrs["event.name"] ?? rec.body?.stringValue ?? "log";
         delete attrs["event.name"];
         pushLog(attrs.sessionId ?? attrs.conversationId, event, attrs);
@@ -543,6 +557,7 @@ function eventCall(e) {
   put("host", e.host);
   if (typeof e.attestedPrice === "number") args.push(`attests=$${e.attestedPrice}`);
   put("round", e.round);
+  put("conversation", e.conversationId);
   if (typeof e.price === "number") args.push(`price=$${e.price}`);
   put("hash", e.hash);
   return `${String(type).replace(/^(vendor|muse|notary)\./, "")}(${args.join(", ")})`;
@@ -554,6 +569,54 @@ function movementOf(e, lastPrice) {
   if (price < lastPrice) return { tag: `down $${(Math.round((lastPrice - price) * 100) / 100).toFixed(2)}`, cls: "down", price };
   if (price > lastPrice) return { tag: `up $${(Math.round((price - lastPrice) * 100) / 100).toFixed(2)}`, cls: "up", price };
   return { tag: "stayed", cls: "flat", price };
+}
+
+function describeEvent(e) {
+  const type = String(e.type ?? "event");
+  const who = e.vendor ?? e.provider ?? "The vendor";
+  const price = typeof e.price === "number" ? `$${e.price}` : "its price";
+  const attested = typeof e.attestedPrice === "number" ? `$${e.attestedPrice}` : "a lower price";
+  if (type === "quote") return `${who} quoted ${price}.`;
+  if (type === "proof") return `A TLSNotary proof was stored when it was presented, attesting ${attested}${e.host ? ` from ${e.host}` : ""}.`;
+  if (type === "barter") return `The personal agent presented a verified proof to ${who}${typeof e.price === "number" ? `, and the recorded result was ${price}` : ""}.`;
+  if (type === "vendor.quote.issued") return `${who} issued a quote at ${price}.`;
+  if (type === "vendor.offer.countered") return `${who} countered at ${price} after checking a verified ${attested} offer.`;
+  if (type === "vendor.offer.floor") return `${who} reached its bottom line at ${price} after checking a verified ${attested} offer.`;
+  if (type === "vendor.offer.held") return `${who} held at ${price} after checking a verified ${attested} offer.`;
+  if (type === "vendor.proof.rejected") return `${who} rejected the proof and kept its price at ${price}.`;
+  if (type === "best") return `${who} had the best recorded offer at ${price}.`;
+  if (type === "done") return "The run ended and waited for approval. Nothing was bought.";
+  return `${type} was recorded.`;
+}
+
+function eventDetailLines(e, proofs = []) {
+  const type = String(e.type ?? "event");
+  const lines = [];
+  if (e.ts || e.t) lines.push(`When: ${e.ts ?? e.t}`);
+  lines.push(`Actor: ${type.startsWith("vendor.") ? (e.vendor ?? e.provider ?? "Vendor agent") : "Personal agent or session record"}`);
+  lines.push(`What happened: ${describeEvent(e)}`);
+  if (e.reason) lines.push(`Decision note: ${e.reason}`);
+  if (e.note) lines.push(`Vendor note: ${e.note}`);
+  if (e.style) lines.push(`Move style: ${e.style}`);
+  if (e.source) lines.push(`Decision source: ${e.source}`);
+  if (type === "proof") {
+    const proof = proofs.find((pr) => String(pr.hash).startsWith(String(e.hash ?? "")))
+      ?? proofs.find((pr) => pr.attested_price === e.attestedPrice && (!e.host || pr.host === e.host));
+    if (proof) {
+      lines.push(`Stored proof verdict: ${proof.verdict ?? "presented"}`);
+      if (proof.host) lines.push(`Proof source: https://${proof.host}${proof.path ?? ""}`);
+      if (proof.hash) lines.push(`Proof hash: ${String(proof.hash).slice(0, 16)}...`);
+    }
+  }
+  if (!e.reason && !e.note && !e.message) {
+    lines.push("Conversation trace: no natural-language message is recorded for this step. The agents exchanged structured protocol data, and the fields below are the trace.");
+  }
+  const hidden = new Set(["type", "ts", "t", "presentationB64"]);
+  const fields = Object.entries(e)
+    .filter(([k, v]) => !hidden.has(k) && v !== undefined && v !== null && v !== "")
+    .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`);
+  if (fields.length) lines.push(`Recorded fields: ${fields.join(" · ")}`);
+  return lines;
 }
 
 function treeRowsHtml(rec) {
@@ -586,7 +649,8 @@ function treeRowsHtml(rec) {
     const verdict = type === "proof"
       ? (proofs.find((pr) => String(pr.hash).startsWith(String(e.hash ?? "")))?.verdict ?? "")
       : "";
-    return `<div class="trow" data-type="${esc(type)}" data-price="${e.price ?? ""}"><span class="ttag">${esc(type.split(".")[0].toUpperCase())}</span><span class="tcall">${esc(eventCall(e))}</span>${verdict ? `<span class="ttag verdict">${esc(verdict)}</span>` : ""}<span class="tmove ${mv.cls}">${mv.price !== null ? esc(mv.tag) : ""}</span></div>`;
+    const detail = eventDetailLines(e, proofs).map((line) => esc(line)).join("<br>");
+    return `<div class="trow" data-type="${esc(type)}" data-price="${e.price ?? ""}" tabindex="0" role="button" aria-expanded="false" title="Inspect this action"><span class="ttag">${esc(type.split(".")[0].toUpperCase())}</span><span class="tcall">${esc(eventCall(e))}</span>${verdict ? `<span class="ttag verdict">${esc(verdict)}</span>` : ""}<span class="tmove ${mv.cls}">${mv.price !== null ? esc(mv.tag) : ""}</span></div><div class="tdetail" hidden>${detail}</div>`;
   });
   return { rows: rows.join(""), lastPrice, count: rows.filter(Boolean).length };
 }
@@ -605,10 +669,17 @@ const page = (rec, base) => {
   .tcall{overflow:hidden;text-overflow:ellipsis}
   .tmove{margin-left:auto;flex:none;font-size:11px}
   .tmove.down{color:#137333}.tmove.up{color:#b3261e}.tmove.flat{color:#6b6b66}
+  .replaybar{display:flex;gap:12px;align-items:center;margin:18px 0 -8px;font-size:13.5px}
+  .replaybar button{font:inherit;font-size:13.5px;padding:7px 12px;border:1.5px solid #1c1c1a;background:#1c1c1a;color:#fbfaf7;cursor:pointer}
+  .replaybar span{color:#6b6b66}
+  .trow[role="button"]{cursor:pointer}
+  .trow.active{background:#efede6;box-shadow:inset 3px 0 #1c1c1a}
+  .tdetail{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.55;background:#f4f2ea;border-bottom:1px solid #d8d5c9;padding:8px 12px 9px 42px;white-space:normal}
 </style>
 <h1>${esc(rec.product || "Your barter")}</h1>
 <p class="lede">Session ${rec.id} · <span id="statusText">${esc(rec.status)}</span>${rec.budget != null ? ` · budget $${rec.budget}` : ""}${rec.keyphrase ? ` · keyphrase <code>${esc(rec.keyphrase)}</code>` : ""}</p>
 <div id="bestSlot">${rec.best_price != null ? `<div class="best"><div>Best offer${rec.best_vendor ? ` from ${esc(rec.best_vendor)}` : ""}</div><div class="price">$${rec.best_price}</div></div>` : ""}</div>
+<div class="replaybar"><button id="replayBtn" type="button">Replay actions</button><span id="replayStatus">Select any action to inspect the recorded trace.</span></div>
 <div class="tree">
 <div class="troot"><span class="ttag">SESSION</span><span class="tcall">session(product="${esc(rec.product)}", status="<span id="rootStatus">${esc(rec.status)}</span>")</span><span class="tmove flat" id="callCount">${tree.count} calls</span></div>
 <div class="tchildren" id="tchildren">${tree.rows || `<div class="trow"><span class="tcall">waiting for the agent to start</span></div>`}</div>
@@ -617,6 +688,77 @@ const page = (rec, base) => {
 let lastPrice = ${tree.lastPrice ?? "null"};
 const treeEl = document.getElementById('tchildren');
 function escHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function detailLines(d){
+  const type = String(d.type || 'event');
+  const who = d.vendor || d.provider || 'The vendor';
+  const lines = [];
+  if (d.t) lines.push('When: ' + d.t);
+  lines.push('Actor: ' + (type.startsWith('vendor.') ? who : 'Personal agent or session record'));
+  if (type === 'vendor.offer.countered') lines.push('What happened: ' + who + ' countered at $' + d.price + ' after checking a verified $' + d.attestedPrice + ' offer.');
+  else if (type === 'proof') lines.push('What happened: A TLSNotary proof was stored when it was presented' + (d.host ? ' from ' + d.host : '') + '.');
+  else lines.push('What happened: ' + type + ' was recorded.');
+  if (d.reason) lines.push('Decision note: ' + d.reason);
+  if (d.note) lines.push('Vendor note: ' + d.note);
+  if (d.style) lines.push('Move style: ' + d.style);
+  if (d.source) lines.push('Decision source: ' + d.source);
+  if (!d.reason && !d.note && !d.message) lines.push('Conversation trace: no natural-language message is recorded for this step. The agents exchanged structured protocol data, and the fields below are the trace.');
+  const fields = Object.entries(d).filter(([k,v]) => !['type','t','presentationB64'].includes(k) && v !== undefined && v !== null && v !== '').map(([k,v]) => k + '=' + (typeof v === 'object' ? JSON.stringify(v) : v));
+  if (fields.length) lines.push('Recorded fields: ' + fields.join(' · '));
+  return lines;
+}
+function detailElement(d){
+  const detail = document.createElement('div');
+  detail.className = 'tdetail';
+  detail.hidden = true;
+  detail.textContent = detailLines(d).join('\n');
+  detail.style.whiteSpace = 'pre-wrap';
+  return detail;
+}
+function setRowOpen(row, open){
+  const detail = row.nextElementSibling;
+  row.classList.toggle('active', open);
+  row.setAttribute('aria-expanded', String(open));
+  if (detail && detail.classList.contains('tdetail')) detail.hidden = !open;
+}
+function toggleRow(row){ setRowOpen(row, row.getAttribute('aria-expanded') !== 'true'); }
+treeEl.addEventListener('click', e => {
+  const row = e.target.closest('.trow[data-type]');
+  if (row) toggleRow(row);
+});
+treeEl.addEventListener('keydown', e => {
+  const row = e.target.closest('.trow[data-type]');
+  if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleRow(row); }
+});
+let replayTimer = null;
+const replayBtn = document.getElementById('replayBtn');
+const replayStatus = document.getElementById('replayStatus');
+function stopReplay(label){
+  if (replayTimer) clearInterval(replayTimer);
+  replayTimer = null;
+  replayBtn.textContent = 'Replay actions';
+  if (label) replayStatus.textContent = label;
+}
+replayBtn.addEventListener('click', () => {
+  if (replayTimer) { stopReplay('Replay stopped. Select any action to inspect the recorded trace.'); return; }
+  const rows = [...treeEl.querySelectorAll('.trow[data-type]')];
+  if (!rows.length) { replayStatus.textContent = 'No actions recorded yet.'; return; }
+  rows.forEach(row => { row.style.display = 'none'; setRowOpen(row, false); });
+  let i = 0;
+  replayBtn.textContent = 'Stop replay';
+  const step = () => {
+    if (i >= rows.length) { stopReplay('Replay complete. Select any action to inspect the recorded trace.'); replayBtn.textContent = 'Replay again'; return; }
+    const row = rows[i];
+    row.style.display = '';
+    setRowOpen(row, true);
+    row.scrollIntoView({ block: 'nearest' });
+    replayStatus.textContent = 'Step ' + (i + 1) + ' of ' + rows.length + ': ' + (row.querySelector('.tcall')?.textContent || row.dataset.type);
+    const cc = document.getElementById('callCount');
+    if (cc) cc.textContent = (i + 1) + ' calls';
+    i++;
+  };
+  step();
+  replayTimer = setInterval(step, 900);
+});
 function appendRow(d){
   const rawType = String(d.type || 'event');
   if (rawType === 'vendor.proof.received' || rawType === 'vendor.conversation.created' || rawType === 'vendor.proof.verified') return;
@@ -650,8 +792,13 @@ function appendRow(d){
   div.className = 'trow';
   div.dataset.type = rawType;
   div.dataset.price = price ?? '';
+  div.tabIndex = 0;
+  div.setAttribute('role', 'button');
+  div.setAttribute('aria-expanded', 'false');
+  div.title = 'Inspect this action';
   div.innerHTML = '<span class="ttag">' + escHtml(type.split('.')[0].toUpperCase()) + '</span><span class="tcall">' + escHtml(type.replace(/^(vendor|muse|notary)\./,'') + '(' + args.join(', ') + ')') + '</span><span class="tmove ' + cls + '">' + escHtml(mv) + '</span>';
   treeEl.appendChild(div);
+  treeEl.appendChild(detailElement(d));
   const cc = document.getElementById('callCount');
   if (cc) cc.textContent = treeEl.querySelectorAll('.trow').length + ' calls';
   if (type === 'best' && price !== null) {
@@ -948,6 +1095,14 @@ export const server = createServer(async (req, res) => {
       ensureSession(sm[1]);
       return send(res, 200, page(rec, base), "text/html");
     }
+    if (req.method === "GET" && url.pathname === "/.well-known/poppy.json") {
+      const domain = (req.headers.host ?? "").split(":")[0].toLowerCase().replace(/^www\./, "");
+      return send(res, 200, {
+        protocol_version: "0.1",
+        organization: { name: "Barter", domain },
+        web: {},
+      });
+    }
     if (req.method === "GET" && url.pathname === "/llms.txt") return send(res, 200, llmsTxt(base), "text/plain");
     if (req.method === "GET" && url.pathname === "/robots.txt")
       return send(
@@ -1010,6 +1165,7 @@ export const server = createServer(async (req, res) => {
         created_at: now(),
       });
       persistEvent(pm[1], "proof", { hash: hash.slice(0, 12), host: body.host ?? "", attestedPrice: body.attestedPrice ?? null });
+      broadcastToSession(pm[1], { t: now(), type: "proof", hash: hash.slice(0, 12), host: body.host ?? "", attestedPrice: body.attestedPrice ?? null });
       return send(res, 201, { ok: true, hash, bytes: presentation.length });
     }
     const m = url.pathname.match(/^\/sessions\/([A-Z0-9]+)\/(stream|events|run)$/);

@@ -319,6 +319,51 @@ code {
   font-size: 26px;
   margin: 14px 0 24px;
 }
+.tactics {
+  border-top: 2px solid #1c1c1a;
+  padding: 16px 0 8px;
+  margin: 0 0 24px;
+  text-align: left;
+}
+.tactics h2 {
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+.tactics p {
+  font-size: 15px;
+  line-height: 1.55;
+}
+.tactic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  margin: 18px 0;
+}
+.tactic-grid div {
+  border-top: 1px solid #ddd9cc;
+  padding-top: 8px;
+}
+.tactic-grid dt {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b6b66;
+  margin-bottom: 4px;
+}
+.tactic-grid dd {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.tactic-note {
+  color: #55534c;
+}
+@media (max-width: 640px) {
+  .tactic-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .agent-box {
   border-top: 2px solid #1c1c1a;
   padding-top: 14px;

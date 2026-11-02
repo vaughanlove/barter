@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
@@ -20,6 +21,34 @@ const post = (path, body) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+
+const getWithHost = (path, host) =>
+  new Promise((resolve, reject) => {
+    const socket = connect(server.address().port, "127.0.0.1", () => {
+      socket.end(`GET ${path} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`);
+    });
+    let text = "";
+    socket.on("data", (chunk) => { text += chunk; });
+    socket.on("error", reject);
+    socket.on("end", () => {
+      const [head] = text.split("\r\n\r\n");
+      resolve({ status: Number(head.split(" ")[1]), body: JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) });
+    });
+  });
+
+test("apex serves minimal Poppy discovery for the requested domain", async () => {
+  const response = await fetch(`${base}/.well-known/poppy.json`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    protocol_version: "0.1",
+    organization: { name: "Barter", domain: "127.0.0.1" },
+    web: {},
+  });
+
+  const www = await getWithHost("/.well-known/poppy.json", "www.barter.computer");
+  assert.equal(www.status, 200);
+  assert.equal(www.body.organization.domain, "barter.computer");
+});
 
 test("typed product creates a persisted session with a recap", async () => {
   const created = await post("/sessions", { product: "Deodorant", budget: 25 });
@@ -130,6 +159,92 @@ test("session page shows each barter step once despite dual reporting", async ()
   const tree = html.slice(html.indexOf('id="tchildren">'), html.indexOf("<script>"));
   assert.ok(!tree.includes("up $"), "vendor old price must not read as an increase");
   assert.match(tree, /down \$0\.90/);
+});
+
+test("session actions can be inspected with the vendor decision trace", async () => {
+  const created = await post("/sessions", { product: "Trace Beans" });
+  const { id } = await created.json();
+  await post(`/sessions/${id}/proofs`, {
+    presentationB64: "aGVsbG8td29ybGQ=",
+    host: "ridgeline.barter.computer",
+    attestedPrice: 2,
+  });
+  await post("/v1/logs", {
+    resourceLogs: [{
+      resource: { attributes: [{ key: "service.name", value: { stringValue: "Ridgeline Outfitters" } }] },
+      scopeLogs: [{
+        logRecords: [{
+          attributes: [
+            { key: "sessionId", value: { stringValue: id } },
+            { key: "event.name", value: { stringValue: "vendor.offer.countered" } },
+            { key: "price", value: { doubleValue: 1.96 } },
+            { key: "attestedPrice", value: { doubleValue: 2 } },
+            { key: "reason", value: { stringValue: "penny under, holding firm" } },
+            { key: "source", value: { stringValue: "deterministic fallback" } },
+          ],
+        }],
+      }],
+    }],
+  });
+
+  const html = await (await fetch(`${base}/s/${id}`)).text();
+  assert.match(html, /id="replayBtn"/);
+  assert.match(html, /class="tdetail"/);
+  assert.match(html, /Actor: Ridgeline Outfitters/);
+  assert.match(html, /Decision note: penny under, holding firm/);
+  assert.match(html, /Decision source: deterministic fallback/);
+  assert.match(html, /no natural-language message is recorded/);
+});
+
+test("live stream receives proof and vendor steps, not just agent events", async () => {
+  const created = await post("/sessions", { product: "Live Beans" });
+  const { id } = await created.json();
+
+  const ctl = new AbortController();
+  let received = "";
+  const pump = (async () => {
+    try {
+      // SSE headers only flush with the first event, so connect in the
+      // background and post the steps before reading.
+      const stream = await fetch(`${base}/sessions/${id}/stream?live=1`, { signal: ctl.signal });
+      const reader = stream.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += new TextDecoder().decode(value);
+      }
+    } catch {}
+  })();
+  await new Promise((r) => setTimeout(r, 300));
+
+  await post(`/sessions/${id}/proofs`, {
+    presentationB64: "aGVsbG8td29ybGQ=",
+    host: "ridgeline.barter.computer",
+    attestedPrice: 2,
+  });
+  await post("/v1/logs", {
+    resourceLogs: [{
+      scopeLogs: [{
+        logRecords: [{
+          attributes: [
+            { key: "sessionId", value: { stringValue: id } },
+            { key: "event.name", value: { stringValue: "vendor.offer.countered" } },
+            { key: "price", value: { doubleValue: 1.96 } },
+            { key: "attestedPrice", value: { doubleValue: 2 } },
+          ],
+        }],
+      }],
+    }],
+  });
+
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline && !(received.includes('"type":"proof"') && received.includes("vendor.offer.countered"))) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  ctl.abort();
+  await pump;
+  assert.match(received, /"type":"proof"/);
+  assert.match(received, /vendor\.offer\.countered/);
 });
 
 test("products are escaped on the session page", async () => {

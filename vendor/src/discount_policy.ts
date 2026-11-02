@@ -5,6 +5,8 @@ export interface PolicyDecision {
   action: "concede" | "reject" | "floor";
   newPrice: number;
   reason: string;
+  source?: string;
+  style?: string;
 }
 
 // Hidden floor. Never exposed via the API or any message.
@@ -43,10 +45,10 @@ export function hardFallback(
   floor: number,
 ): PolicyDecision {
   if (attestedLowest === null) {
-    return { action: "reject", newPrice: currentPrice, reason: "no verified lower offer" };
+    return { action: "reject", newPrice: currentPrice, reason: "no verified lower offer", source: "deterministic guard" };
   }
   if (attestedLowest >= currentPrice) {
-    return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower" };
+    return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower", source: "deterministic guard" };
   }
   const headroomPct = ((currentPrice - floor) / currentPrice) * 100;
   const stepPct = headroomPct > 20 ? 8 : headroomPct > 10 ? 5 : 3;
@@ -54,11 +56,11 @@ export function hardFallback(
   if (target >= attestedLowest) target = round2(attestedLowest - 0.01);
   if (target <= floor) {
     if (floor >= currentPrice) {
-      return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower" };
+      return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower", source: "deterministic guard" };
     }
-    return { action: "floor", newPrice: floor, reason: "best possible price reached" };
+    return { action: "floor", newPrice: floor, reason: "best possible price reached", source: "deterministic fallback" };
   }
-  return { action: "concede", newPrice: target, reason: "verified lower offer" };
+  return { action: "concede", newPrice: target, reason: "verified lower offer", source: "deterministic fallback" };
 }
 
 // Beat a verified rival price the way this vendor negotiates: just under
@@ -69,10 +71,10 @@ export function beat(
   floor: number,
 ): PolicyDecision {
   if (attestedLowest === null) {
-    return { action: "reject", newPrice: currentPrice, reason: "no verified lower offer" };
+    return { action: "reject", newPrice: currentPrice, reason: "no verified lower offer", source: "deterministic guard" };
   }
   if (attestedLowest >= currentPrice) {
-    return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower" };
+    return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower", source: "deterministic guard" };
   }
   const mode = process.env.VENDOR_UNDERCUT_MODE ?? "penny";
   const pct = Number(process.env.VENDOR_UNDERCUT_PCT ?? 5);
@@ -80,23 +82,23 @@ export function beat(
   const target = round2(attestedLowest - step);
   if (target <= floor) {
     if (floor >= currentPrice) {
-      return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower" };
+      return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower", source: "deterministic guard" };
     }
-    return { action: "floor", newPrice: floor, reason: "best possible price reached" };
+    return { action: "floor", newPrice: floor, reason: "best possible price reached", source: "deterministic fallback" };
   }
-  return { action: "concede", newPrice: target, reason: "verified lower offer" };
+  return { action: "concede", newPrice: target, reason: "verified lower offer", source: "deterministic fallback" };
 }
 
 export function decide(currentPrice: number, attestedLowest: number | null): PolicyDecision {
   if (attestedLowest === null) {
-    return { action: "reject", newPrice: currentPrice, reason: "no verified lower offer" };
+    return { action: "reject", newPrice: currentPrice, reason: "no verified lower offer", source: "deterministic guard" };
   }
   if (attestedLowest >= currentPrice) {
-    return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower" };
+    return { action: "reject", newPrice: currentPrice, reason: "attested offer is not lower", source: "deterministic guard" };
   }
   const target = attestedLowest - UNDERCUT;
   if (target <= FLOOR) {
-    return { action: "floor", newPrice: FLOOR, reason: "best possible price reached" };
+    return { action: "floor", newPrice: FLOOR, reason: "best possible price reached", source: "deterministic policy" };
   }
-  return { action: "concede", newPrice: target, reason: "verified lower offer" };
+  return { action: "concede", newPrice: target, reason: "verified lower offer", source: "deterministic policy" };
 }

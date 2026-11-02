@@ -123,6 +123,53 @@ describe("discovery", () => {
   });
 });
 
+describe("bartering tactics", () => {
+  it("publishes the live tactics for this vendor instance", async () => {
+    process.env.VENDOR_POLICY_TEXT = "Move boldly, but only on proof.";
+    process.env.VENDOR_MARKUP_PCT = "2";
+    process.env.VENDOR_FLOOR_PCT = "12";
+    process.env.VENDOR_UNDERCUT_MODE = "percent";
+    process.env.VENDOR_UNDERCUT_PCT = "5";
+    process.env.VENDOR_MONTHLY_POOL_USD = "100000";
+
+    const response = await fetch(`${baseUrl}/api/tactics`);
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect(body).toMatchObject({
+      vendor: "Test Vendor",
+      policy: "Move boldly, but only on proof.",
+      discountCeilingPct: 12,
+      monthlyPromoPoolUsd: 100000,
+    });
+    expect(body.opening).toMatchObject({ markupPct: 2 });
+    expect(body.counterStyle).toMatchObject({ mode: "percent", pct: 5 });
+  });
+
+  it("records why a counter was made and which decision path made it", async () => {
+    process.env.VENDOR_MARKUP_PCT = "5";
+    process.env.VENDOR_FLOOR_PCT = "8";
+    process.env.VENDOR_UNDERCUT_MODE = "penny";
+    delete process.env.MODEL_API_KEY;
+    const created = await postJson("/poppy/conversations", {
+      product: "Trace Soap",
+      presentationB64: "price-20",
+    });
+    const id = String(created.body.id);
+
+    await barter(id, "price-19");
+    const response = await fetch(`${baseUrl}/poppy/conversations/${id}/events`);
+    const body = (await response.json()) as { events: Record<string, unknown>[] };
+    const counter = body.events.find((event) => event.event === "vendor.offer.countered");
+
+    expect(counter).toMatchObject({
+      vendor: "Test Vendor",
+      product: "Trace Soap",
+      reason: "verified lower offer",
+      source: "deterministic fallback",
+    });
+  });
+});
+
 describe("proof-anchored mirror pricing", () => {
   async function anchored(): Promise<string> {
     process.env.VENDOR_MARKUP_PCT = "5";

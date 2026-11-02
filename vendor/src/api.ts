@@ -87,14 +87,18 @@ function emit(
   const record = {
     ts: new Date().toISOString(),
     event,
+    vendor: vendorName,
     conversationId: conv.id,
     sku: conv.sku,
+    ...(conv.product ? { product: conv.product } : {}),
     ...attrs,
   };
   conv.events.push(record);
   log(event, {
+    vendor: vendorName,
     conversationId: conv.id,
     sku: conv.sku,
+    ...(conv.product ? { product: conv.product } : {}),
     ...(conv.sessionId ? { sessionId: conv.sessionId } : {}),
     ...attrs,
   });
@@ -124,7 +128,13 @@ async function decideAnchored(conv: Conversation, attested: number): Promise<Pol
   let price = proposal.price;
   if (!(price < attested) || price >= conv.price) return fallback;
   if (price < floor) {
-    return { action: "floor", newPrice: floor, reason: "best possible price reached" };
+    return {
+      action: "floor",
+      newPrice: floor,
+      reason: "best possible price reached",
+      source: "Muse Spark proposal clamped by deterministic floor",
+      style: proposal.style,
+    };
   }
   const poolCap = Number(process.env.VENDOR_MONTHLY_POOL_USD ?? 0);
   if (poolCap > 0) {
@@ -143,6 +153,8 @@ async function decideAnchored(conv: Conversation, attested: number): Promise<Pol
     action: price <= floor ? "floor" : "concede",
     newPrice: price,
     reason: proposal.style || "verified lower offer",
+    source: "Muse Spark proposal checked by deterministic guard",
+    style: proposal.style,
   };
 }
 
@@ -216,6 +228,31 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
     }
     if (req.method === "GET" && path === "/api/catalog") {
       send(res, 200, { vendor: vendorName, products: listProducts() });
+      return true;
+    }
+    if (req.method === "GET" && path === "/api/tactics") {
+      const pool = Number(process.env.VENDOR_MONTHLY_POOL_USD ?? 0);
+      send(res, 200, {
+        vendor: vendorName,
+        policy:
+          process.env.VENDOR_POLICY_TEXT ||
+          "Move only on a verified lower price, in measured steps, and never below the discount ceiling.",
+        proofGate:
+          "No verified TLSNotary proof of a lower price, no concession. Claims without a presentation are ignored.",
+        opening: {
+          basis: "first verified online price for the product",
+          markupPct: Number(process.env.VENDOR_MARKUP_PCT ?? 5),
+        },
+        discountCeilingPct: Number(process.env.VENDOR_FLOOR_PCT ?? 8),
+        counterStyle: {
+          mode: process.env.VENDOR_UNDERCUT_MODE ?? "penny",
+          pct: Number(process.env.VENDOR_UNDERCUT_PCT ?? 5),
+        },
+        decisionProcess:
+          "Muse Spark may propose a counter in the written policy style. A deterministic guard can reject it, clamp it to the discount ceiling, or replace it.",
+        fallback: "Without a usable model proposal, the price steps down 8%, then 5%, then 3% as it nears the discount ceiling.",
+        monthlyPromoPoolUsd: pool > 0 ? pool : null,
+      });
       return true;
     }
     if (req.method === "GET" && path === "/openapi.json") {
@@ -354,7 +391,13 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
           promoPoolSpent += Math.max(0, conv.price - decision.newPrice);
         }
         if (decision.action === "reject") {
-          emit(conv, "vendor.offer.held", { price: conv.price, attestedPrice: attested });
+          emit(conv, "vendor.offer.held", {
+            price: conv.price,
+            attestedPrice: attested,
+            reason: decision.reason,
+            ...(decision.source ? { source: decision.source } : {}),
+            ...(decision.style ? { style: decision.style } : {}),
+          });
           send(res, 200, { type: "offer", data: { price: conv.price, note: decision.reason } });
           return true;
         }
@@ -362,6 +405,9 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
         emit(conv, decision.action === "floor" ? "vendor.offer.floor" : "vendor.offer.countered", {
           price: conv.price,
           attestedPrice: attested,
+          reason: decision.reason,
+          ...(decision.source ? { source: decision.source } : {}),
+          ...(decision.style ? { style: decision.style } : {}),
         });
         send(res, 200, {
           type: "offer",
