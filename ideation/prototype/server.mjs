@@ -473,6 +473,9 @@ const STYLE = `
   .licon{vertical-align:-3px;margin-right:7px}
   .lbar{height:9px;background:#1c1c1a;flex:none}
   .lstep .lprice{font-weight:700;white-space:nowrap}
+  .lstep .lnote{font-size:12.5px;color:#6b6b66;white-space:nowrap}
+  .lstep.loopstep{position:relative;padding-right:34px}
+  .looparrow{position:absolute;right:8px;top:58%;font-size:24px;line-height:1;color:#C70000}
   .lstep.best .lprice{color:#C70000}
   .lstep.best .lbar{background:#C70000}
   .pflow{display:flex;align-items:stretch;gap:10px;margin:16px 0 0}
@@ -528,6 +531,8 @@ const STYLE = `
     .ladder{border-top-color:#ecece7}
     .ladder .lcap{color:#a9a9a1}
     .lstep{border-bottom-color:#2c2c28}
+    .lstep .lnote{color:#a9a9a1}
+    .looparrow{color:#ff5147}
     .lbar{background:#ecece7}
     .lstep.best .lprice{color:#ff5147}
     .lstep.best .lbar{background:#ff5147}
@@ -560,13 +565,14 @@ const landingPage = (base, missing = false) => {
 <link href="https://fonts.googleapis.com/css2?family=Gelasio:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
 <title>Barter</title><style>${STYLE}</style>
 <h1>Ask your agent to barter for you.</h1>
-<p class="lede">Bring your own Muse. Point it at barter.computer and watch it
-barter with different vendors to find you the best price on
-products. No app to install: your agent learns how to plug in
-here, then barters with company agents over prices that are
-cryptographically verifiable with
-<a href="https://github.com/tlsnotary/tlsn">TLSNotary</a>, so no price
-is taken on faith and vendors only move on prices that check out.</p>
+<p class="lede">Bring your own agent. Point it at barter.computer and it learns
+a protocol for turning a price it finds anywhere online into a
+verifiable proof, then uses that proof to barter with vendors.
+No app to install and no price taken on faith: vendors only move
+on prices they can verify themselves with
+<a href="https://github.com/tlsnotary/tlsn">TLSNotary</a>. In this
+demo the companies are simulated. The proofs, the verification,
+and the negotiation are real.</p>
 <div class="cardwrap">
 <div class="grules"><i></i><i></i><i></i><i></i></div>
 <div class="kicker">Say this to your agent</div>
@@ -585,9 +591,9 @@ is taken on faith and vendors only move on prices that check out.</p>
 <h2>What the protocol makes possible</h2>
 <ol class="lsteps">
 <li class="lstep"><span class="lname">Your agent finds a price online</span><span class="lbar" style="width:142px"></span><span class="lprice">$17.19</span></li>
-<li class="lstep"><span class="lname"><svg class="licon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#C70000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>Proof generated: a provable presentation of that price</span><span class="lbar" style="width:142px"></span><span class="lprice">$17.19</span></li>
-<li class="lstep"><span class="lname">Vendors stocking the product verify the proof</span><span class="lbar" style="width:146px"></span><span class="lprice">verified</span></li>
-<li class="lstep"><span class="lname">Multiple rounds of counter-offers, each backed by its own proof</span><span class="lbar" style="width:138px"></span><span class="lprice">$16.65</span></li>
+<li class="lstep"><span class="lname"><svg class="licon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#C70000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>Proof generated: a provable presentation of that price</span><span class="lnote">TLSNotary presentation</span></li>
+<li class="lstep loopstep"><span class="lname">Vendors stocking the product verify the proof</span><span class="lnote">TLSNotary verification</span><span class="looparrow" aria-hidden="true">&#8597;</span></li>
+<li class="lstep loopstep"><span class="lname">Multiple rounds of counter-offers, each backed by its own proof</span><span class="lprice">&darr; lower each round</span></li>
 <li class="lstep best"><span class="lname"><svg class="licon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#C70000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Best price locked, awaiting your approval</span><span class="lbar" style="width:130px"></span><span class="lprice">$15.67</span></li>
 </ol>
 <p class="lcap">Prices from a real run. The vendors are any company agents; the proof is what lets strangers negotiate without trusting each other&rsquo;s claims. <a href="/s/${REFERENCE_SESSION}">See this run</a></p>
@@ -607,7 +613,7 @@ is taken on faith and vendors only move on prices that check out.</p>
 (function rotate() {
   const el = document.getElementById('rotator');
   if (!el) return;
-  const words = ['carpe deodorant', 'kidney beans', 'moretti beer'];
+  const words = ['carpe deodorant', 'kidney beans', 'a case of Moretti'];
   const chars = 'abcdefghijklmnopqrstuvwxyz';
   let wi = 0;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
