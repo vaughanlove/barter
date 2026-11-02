@@ -413,13 +413,13 @@ const landingPage = (base, missing = false) => {
   return `<!doctype html><meta charset="utf-8">
 <title>Barter</title><style>${STYLE}</style>
 <h1>Ask your agent to barter for you.</h1>
-<p class="lede">Point your own agent to barter.computer and watch it barter with
-different vendors to find you the best price on products. No app to
-install. Let your agent bring its own tools and style to bartering
-in a trustless manner. And no price is taken on faith: each one is
-cryptographically attested with
-<a href="https://github.com/tlsnotary/tlsn">TLSNotary</a>, so vendors
-only move on prices that check out.</p>
+<p class="lede">Bring your own Muse. Point it at barter.computer and watch it
+barter with different vendors to find you the best price on
+products. No app to install: your agent learns how to plug in
+here, then barters with company agents over prices that are
+cryptographically verifiable with
+<a href="https://github.com/tlsnotary/tlsn">TLSNotary</a>, so no price
+is taken on faith and vendors only move on prices that check out.</p>
 <div class="cardwrap">
 <div class="say"><p class="quote">&ldquo;Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on <span class="rotator" id="rotator">carpe deodorant</span>&rdquo;</p></div>
 <button class="copychip" onclick="navigator.clipboard.writeText('Go to ${esc(base.replace(/^https?:\/\//, ""))} and find me the best price on [your item]. Keyphrase: ${phrase}');this.textContent='Copied'">Copy prompt</button>
