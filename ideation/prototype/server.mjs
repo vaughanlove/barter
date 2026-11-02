@@ -792,7 +792,10 @@ async function findPrice(body) {
     }),
     signal: AbortSignal.timeout(30_000),
   }).catch(() => null);
-  if (!res || !res.ok) return { status: 200, out: { price: null, error: `classifier call failed: HTTP ${res?.status ?? "network"}` } };
+  if (!res || !res.ok) {
+    const detail = res ? (await res.text().catch(() => "")).slice(0, 240) : "";
+    return { status: 200, out: { price: null, error: `classifier call failed: HTTP ${res?.status ?? "network"} ${detail}`.trim() } };
+  }
   const data = await res.json().catch(() => ({}));
   let parsed = {};
   try {
