@@ -145,7 +145,9 @@ describe("bartering tactics", () => {
     expect(body.counterStyle).toMatchObject({ mode: "percent", pct: 5 });
     const business = body.business as Record<string, unknown>;
     expect(business.stockCoverMonths).toBeGreaterThanOrEqual(2.6);
-    expect(typeof business.daysLeftInMonth).toBe("number");
+    expect(business.restockCycleWeeks).toBe(4);
+    expect(typeof business.stockedDaysAgo).toBe("number");
+    expect(typeof business.daysToRestock).toBe("number");
     expect(typeof business.why).toBe("string");
   });
 

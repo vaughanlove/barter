@@ -1,13 +1,5 @@
 import "./style.css";
 
-interface Product {
-  sku: string;
-  name: string;
-  price: number;
-  currency: string;
-  blurb: string;
-}
-
 interface Tactics {
   vendor: string;
   policy: string;
@@ -23,6 +15,9 @@ interface Tactics {
     monthlyDemandUnits: number;
     stockCoverMonths: number;
     monthlyReloadUnits: number;
+    restockCycleWeeks: number;
+    stockedDaysAgo: number;
+    daysToRestock: number;
     daysLeftInMonth: number;
     salesPacePct: number;
     urgency: string;
@@ -44,6 +39,7 @@ app.innerHTML = `
     <h2 id="businessTitle">This month at this business</h2>
     <p id="businessWhy">Loading the sales picture…</p>
     <dl class="metric-strip" id="businessMetrics"></dl>
+    <p class="stock-note">No fixed shelf: ask for any item and this vendor quotes it from the proven price, with a stock picture simulated for that item at quote time.</p>
   </section>
 
   <section class="example" aria-labelledby="exampleTitle">
@@ -63,11 +59,6 @@ app.innerHTML = `
     <dl class="tactic-grid" id="tacticGrid"></dl>
   </section>
 
-  <section aria-labelledby="productsTitle">
-    <h2 id="productsTitle">On the shelf</h2>
-    <ul class="products" id="products"><li>Loading…</li></ul>
-  </section>
-
   <section class="agent-box">
     <h2>For agents</h2>
     <p>Discovery: <code>/.well-known/poppy.json</code></p>
@@ -75,27 +66,6 @@ app.innerHTML = `
     <p>Discounts are only offered against a verified TLSNotary proof of a lower offer.</p>
   </section>
 </main>`;
-
-fetch("/api/catalog")
-  .then((r) => r.json())
-  .then((data: { vendor?: string; products: Product[] }) => {
-    if (data.vendor) {
-      document.querySelector("#vendorName")!.textContent = data.vendor;
-      document.querySelector("#vendorTitle")!.textContent = data.vendor;
-    }
-    document.querySelector("#products")!.innerHTML = data.products
-      .map(
-        (p) => `<li class="product">
-          <div><strong>${esc(p.name)}</strong><br><span class="blurb">${esc(p.blurb)}</span><br>
-          <span class="sku">SKU ${esc(p.sku)}</span></div>
-          <span class="price">$${p.price}</span>
-        </li>`,
-      )
-      .join("");
-  })
-  .catch(() => {
-    document.querySelector("#products")!.innerHTML = "<li>Catalog unavailable</li>";
-  });
 
 fetch("/api/tactics")
   .then((r) => r.json())
@@ -112,10 +82,10 @@ fetch("/api/tactics")
     const b = t.business;
     document.querySelector("#businessWhy")!.textContent = b.why;
     const metrics: [string, string][] = [
+      ["Last stocked", `${b.stockedDaysAgo} days ago`],
+      ["Restock cycle", `Every ${b.restockCycleWeeks} weeks`],
+      ["Next reload", `${b.monthlyReloadUnits} units in ${b.daysToRestock} days`],
       ["Stock cover", `${b.stockCoverMonths} months`],
-      ["Reload", `${b.monthlyReloadUnits} units next month`],
-      ["Days left", `${b.daysLeftInMonth} this month`],
-      ["Sales pace", `${b.salesPacePct}% of target`],
     ];
     document.querySelector("#businessMetrics")!.innerHTML = metrics
       .map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${esc(value)}</dd></div>`)

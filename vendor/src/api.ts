@@ -79,23 +79,31 @@ function businessContext() {
   const daysLeft = daysInMonth - now.getDate();
   const pacePct = Math.min(118, Math.round(((now.getDate() / daysInMonth) * (bold ? 82 : 97)) + ((hash >> 5) % 9)));
   const reloadUnits = monthlyDemand;
+  const cycleWeeks = Number(process.env.VENDOR_RESTOCK_WEEKS ?? (bold ? 4 : 2));
+  const cycleDays = cycleWeeks * 7;
+  const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86_400_000);
+  const stockedDaysAgo = dayOfYear % cycleDays;
+  const daysToRestock = cycleDays - stockedDaysAgo;
   const overstocked = coverMonths >= 2;
-  const monthEndPressure = daysLeft <= 10;
-  const urgency = overstocked && monthEndPressure
+  const reloadPressure = daysToRestock <= 5;
+  const urgency = overstocked && reloadPressure
     ? "high"
     : overstocked || pacePct < 85
       ? "rising"
       : "low";
   const why = urgency === "high"
-    ? `We are carrying ${coverMonths.toFixed(1)} months of stock, another ${reloadUnits} units land next month, and there are ${daysLeft} days left to sell. Discounting now is cheaper than holding this inventory.`
+    ? `Last stocked ${stockedDaysAgo} days ago on a ${cycleWeeks}-week cycle, and the next reload lands in ${daysToRestock} days. With ${coverMonths.toFixed(1)} months of cover on hand, discounting now beats making room later.`
     : urgency === "rising"
-      ? `Stock cover is ${coverMonths.toFixed(1)} months against ${monthlyDemand} units a month of demand. We will deal, but we are not in a rush.`
-      : `Stock is lean at ${coverMonths.toFixed(1)} months of cover and sales are pacing at ${pacePct}% of target. Margin matters more than speed.`;
+      ? `Last stocked ${stockedDaysAgo} days ago on a ${cycleWeeks}-week cycle. Stock cover is ${coverMonths.toFixed(1)} months, so we will deal, but we are not in a rush.`
+      : `Last stocked ${stockedDaysAgo} days ago on a ${cycleWeeks}-week cycle. Fresh, lean stock at ${coverMonths.toFixed(1)} months of cover, so margin matters more than speed.`;
   return {
     stockUnits,
     monthlyDemandUnits: monthlyDemand,
     stockCoverMonths: Math.round(coverMonths * 10) / 10,
     monthlyReloadUnits: reloadUnits,
+    restockCycleWeeks: cycleWeeks,
+    stockedDaysAgo,
+    daysToRestock,
     daysLeftInMonth: daysLeft,
     salesPacePct: pacePct,
     urgency,
