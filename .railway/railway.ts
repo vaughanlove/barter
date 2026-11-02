@@ -34,6 +34,8 @@ export default defineRailway(() => {
       LANDING_VENDOR_URL_B: VENDOR_B,
       LANDING_SIDECAR_URL: PROVE,
       BARTER_DB_PATH: "/data/barter.db",
+      // JEV price classifier key. Set once in Railway; IaC keeps it.
+      MODEL_API_KEY: preserve(),
     },
   });
 
@@ -67,6 +69,10 @@ export default defineRailway(() => {
       VENDOR_MARKUP_PCT: "5",
       VENDOR_FLOOR_PCT: "8",
       VENDOR_UNDERCUT_MODE: "penny",
+      VENDOR_POLICY_TEXT:
+        "Cautious margin keeper. Beat a verified rival price by the smallest credible amount. Hold firm as you near your bottom line. Discounts come out of a limited monthly promo pool, so spend it slowly.",
+      VENDOR_MONTHLY_POOL_USD: "250",
+      MODEL_API_KEY: preserve(),
       VERIFIER_URL: `${PROVE}/verify`,
       VERIFIER_TIMEOUT_MS: "10000",
       OTEL_EXPORTER_OTLP_ENDPOINT: LANDING,
@@ -88,6 +94,10 @@ export default defineRailway(() => {
       VENDOR_FLOOR_PCT: "12",
       VENDOR_UNDERCUT_MODE: "percent",
       VENDOR_UNDERCUT_PCT: "5",
+      VENDOR_POLICY_TEXT:
+        "Volume hunter with deep stock. Move in bold steps to win the deal quickly rather than shaving pennies. You may offer up to 20% off while the monthly promo budget lasts; winning the sale matters more than the last dollar of margin.",
+      VENDOR_MONTHLY_POOL_USD: "100000",
+      MODEL_API_KEY: preserve(),
       VERIFIER_URL: `${PROVE}/verify`,
       VERIFIER_TIMEOUT_MS: "10000",
       OTEL_EXPORTER_OTLP_ENDPOINT: LANDING,

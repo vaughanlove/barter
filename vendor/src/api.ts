@@ -15,7 +15,8 @@
 
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { anchoredAsk, anchoredFloor, beat, decide } from "./discount_policy.ts";
+import { anchoredAsk, anchoredFloor, beat, decide, type PolicyDecision } from "./discount_policy.ts";
+import { proposeCounter } from "./llm_policy.ts";
 import { DEMO_SKU, getProduct, listProducts } from "./inventory.ts";
 
 const OPENAPI = {
@@ -40,6 +41,8 @@ interface Conversation {
   product?: string;
   anchor?: number;
   floorPrice?: number;
+  ask?: number;
+  rounds?: number;
   sessionId?: string;
   events: Record<string, unknown>[];
 }
@@ -89,6 +92,51 @@ function emit(
     ...(conv.sessionId ? { sessionId: conv.sessionId } : {}),
     ...attrs,
   });
+}
+
+// Total discount granted against the monthly promo pool (in-memory,
+// resets with the process: demo scope).
+let promoPoolSpent = 0;
+
+// Anchored negotiation: Spark proposes in the company's own style,
+// the deterministic guard disposes. No proposal survives below the
+// floor, at/above the attested price, or past the monthly pool.
+async function decideAnchored(conv: Conversation, attested: number): Promise<PolicyDecision> {
+  const floor = conv.floorPrice ?? 0;
+  const fallback = beat(conv.price, attested, floor);
+  if (fallback.action === "reject") return fallback;
+  conv.rounds = (conv.rounds ?? 0) + 1;
+  const proposal = await proposeCounter({
+    product: conv.product ?? conv.sku,
+    current: conv.price,
+    attested,
+    floor,
+    round: conv.rounds,
+    policyText: process.env.VENDOR_POLICY_TEXT ?? "",
+  });
+  if (!proposal) return fallback;
+  let price = proposal.price;
+  if (!(price < attested) || price >= conv.price) return fallback;
+  if (price < floor) {
+    return { action: "floor", newPrice: floor, reason: "best possible price reached" };
+  }
+  const poolCap = Number(process.env.VENDOR_MONTHLY_POOL_USD ?? 0);
+  if (poolCap > 0) {
+    const remaining = poolCap - promoPoolSpent;
+    if (remaining <= 0) {
+      return { action: "reject", newPrice: conv.price, reason: "monthly promo pool exhausted" };
+    }
+    if (conv.price - price > remaining) {
+      const funded = Math.round((conv.price - remaining) * 100) / 100;
+      if (funded < attested && funded >= floor && funded < conv.price) price = funded;
+      else return { action: "reject", newPrice: conv.price, reason: "monthly promo pool exhausted" };
+    }
+  }
+  return {
+    action: price <= floor ? "floor" : "concede",
+    newPrice: price,
+    reason: proposal.style || "verified lower offer",
+  };
 }
 
 // Extract the attested price from the *verified* transcript text. The price
@@ -208,6 +256,8 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
           anchor,
           floorPrice: anchoredFloor(anchor),
           price: anchoredAsk(anchor),
+          ask: anchoredAsk(anchor),
+          rounds: 0,
           sessionId,
           events: [],
         };
@@ -291,8 +341,11 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
         emit(conv, "vendor.proof.verified", { price: conv.price, attestedPrice: attested });
         const decision =
           conv.floorPrice !== undefined
-            ? beat(conv.price, attested, conv.floorPrice)
+            ? await decideAnchored(conv, attested)
             : decide(conv.price, attested);
+        if (conv.floorPrice !== undefined && decision.action !== "reject") {
+          promoPoolSpent += Math.max(0, conv.price - decision.newPrice);
+        }
         if (decision.action === "reject") {
           emit(conv, "vendor.offer.held", { price: conv.price, attestedPrice: attested });
           send(res, 200, { type: "offer", data: { price: conv.price, note: decision.reason } });

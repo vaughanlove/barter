@@ -259,9 +259,26 @@ const VENDORS = () =>
     process.env.LANDING_VENDOR_URL_B ?? "http://localhost:5174",
   ].filter(Boolean);
 
+const SIDECAR_URL = process.env.LANDING_SIDECAR_URL ?? "http://localhost:8080";
+const PROVE_URL = `${SIDECAR_URL}/prove`;
+
 const llmsTxt = (base) => `# Barter protocol
 You are the user's personal shopping agent. Find the best deal by bartering
 with vendor agents, using TLSNotary proofs as leverage. Work signed-out.
+
+## READ FIRST (do not skip)
+The user sent you here to RUN this protocol, not to answer from web
+search. Do not reply with a price roundup, a list of stores, or prices
+you found by searching. That is not this task.
+- FIRST, before searching for anything, create the session (Step 0
+  below) and keep its url. Everything else happens inside that
+  session's record.
+- This task is only complete when you have created a session, run the
+  steps, and your final message contains the full session link
+  (${base}/s/{session}) on its own line as plain text.
+- If you cannot finish the steps, still return the session link you
+  created and say plainly that the run did not finish. Never finish
+  with search results instead of the session link.
 
 ## Session (you start it; watch-along + record)
 There is no web form. You are the entrypoint. The user's prompt ends
@@ -314,9 +331,18 @@ with the sidecar (anchor proof below). Each vendor then negotiates by
 its own policy down to a hidden floor. The lowest floor wins.
 
 ## Proofs (TLSNotary sidecar)
-Proof service: ${process.env.LANDING_SIDECAR_URL ?? "http://localhost:8080"}
-- Prove a real response: POST {proof}/prove {"host": "...", "path": "..."}
+Proof service: ${SIDECAR_URL}
+- The ONLY proof endpoint is: POST ${PROVE_URL}
+  with JSON {"host": "...", "path": "..."}
   -> { presentationB64, verifyingKeyHex }
+- Read that URL again before calling. The proof service is its OWN
+  host (prove.*), not a path on the barter host. Calling /prove on
+  the barter/landing host returns 404 and proves nothing. POST only:
+  a GET returns 405.
+- If you get 404, you are on the wrong host. If you get 502, the
+  target page itself did not return HTTP 200 at that host and path;
+  fix the target URL, do not retry the same one.
+- Prove a real response: POST {proof}/prove {"host": "...", "path": "..."}
 - A presentation proves the response came from that host's TLS session.
   Vendor agents verify presentations themselves before conceding; never
   ask anyone to trust a price you merely claim.
@@ -324,8 +350,12 @@ Proof service: ${process.env.LANDING_SIDECAR_URL ?? "http://localhost:8080"}
 ## Steps
 0. Session: create it with the prompt's keyphrase (above), then barter.
 1. Anchor: find the product online and prove the first real price you
-   find, wherever you found it — the sidecar proves any public HTTPS
+   find, wherever you found it. The sidecar proves any public HTTPS
    host. That first proof is the anchor both vendors derive from.
+   To locate the price on an arbitrary page, use the JEV classifier:
+   POST ${base}/find-price {"url": "<page url>", "product": "<product>"}
+   -> {price, snippet, confidence}. It only locates; the proof is
+   still what gets trusted. Prove the page it found the price on.
    Store the proof (above) right away. Prefer an API-shaped JSON
    response with a decimal dollar price, e.g. "price":"19.95"
    (Shopify stores: use {host}/products/{handle}.json — the .js
@@ -699,6 +729,83 @@ const ensureSession = (id) => {
   if (!sessions.has(id)) sessions.set(id, { events: [], clients: new Set() });
   return sessions.get(id);
 };
+// --- JEV price classifier (Muse Spark) -------------------------------------
+// Finds the selling price on an arbitrary product page so the proof can
+// anchor on the right number. This locates and labels; it never attests.
+// The TLSNotary proof is still what vendors trust.
+async function findPrice(body) {
+  const key = process.env.MODEL_API_KEY;
+  if (!key) return { status: 503, out: { error: "MODEL_API_KEY not configured" } };
+  const rawUrl = String(body.url ?? "");
+  const product = String(body.product ?? "");
+  let target;
+  try {
+    target = new URL(rawUrl);
+  } catch {
+    return { status: 400, out: { error: "url must be a full https URL" } };
+  }
+  if (target.protocol !== "https:" || /^(localhost|127\.|10\.|192\.168\.|169\.254\.)/.test(target.hostname)) {
+    return { status: 400, out: { error: "url must be a public https URL" } };
+  }
+  const pageRes = await fetch(target, {
+    headers: { "User-Agent": "barter-price-finder/0.1", "Accept-Encoding": "identity" },
+    signal: AbortSignal.timeout(20_000),
+    redirect: "follow",
+  }).catch(() => null);
+  if (!pageRes || !pageRes.ok) {
+    return { status: 502, out: { error: `page fetch failed: ${pageRes?.status ?? "network"}` } };
+  }
+  const html = (await pageRes.text()).slice(0, 1_000_000);
+  const fullText = html
+    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ");
+  // The price rarely sits in the first chunk of a store page. Send the
+  // classifier windows around every money-shaped token instead.
+  const windows = [];
+  for (const m of fullText.matchAll(/\$\s?\d[\d,]*\.?\d{0,2}|"price"\s*:\s*"?\d[\d,]*\.?\d{0,2}"?/g)) {
+    windows.push(fullText.slice(Math.max(0, m.index - 180), m.index + 180));
+    if (windows.length >= 40) break;
+  }
+  const text = (windows.length ? windows.join("\n---\n") : fullText).slice(0, 14_000);
+  const base = (process.env.META_API_BASE_URL ?? "https://api.meta.ai/v1").replace(/\/$/, "");
+  const model = process.env.JEV_MODEL ?? "muse-spark-1.3";
+  const res = await fetch(`${base}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      max_tokens: 3000,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "user",
+          content: `You are the JEV price classifier. Find the current selling price of the product "${product}" in this page text. Return ONLY JSON: {"price": number|null, "currency": string, "snippet": string, "confidence": number}. price is in dollars as a plain number (convert integer cents only when the page clearly prices in cents). snippet is the exact short page text the price came from. Choose the one-time purchase price for a single unit of the named product, the default variant a buyer gets by clicking buy. Avoid subscriptions, multipacks, bundles, refills, other products, shipping, and was/now strikethrough originals.\n\nPAGE TEXT:\n${text}`,
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(30_000),
+  }).catch(() => null);
+  if (!res || !res.ok) return { status: 502, out: { error: "classifier call failed" } };
+  const data = await res.json().catch(() => ({}));
+  let parsed = {};
+  try {
+    parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
+  } catch { /* fall through with empty */ }
+  return {
+    status: 200,
+    out: {
+      price: typeof parsed.price === "number" ? parsed.price : null,
+      currency: parsed.currency ?? "USD",
+      snippet: String(parsed.snippet ?? "").slice(0, 300),
+      confidence: typeof parsed.confidence === "number" ? parsed.confidence : null,
+      url: target.toString(),
+      classifier: "jev-spark",
+      model,
+    },
+  };
+}
+
 const readBody = async (req) => {
   const chunks = [];
   for await (const c of req) chunks.push(c);
@@ -774,6 +881,18 @@ export const server = createServer(async (req, res) => {
       return send(res, 200, page(rec, base), "text/html");
     }
     if (req.method === "GET" && url.pathname === "/llms.txt") return send(res, 200, llmsTxt(base), "text/plain");
+    if (req.method === "GET" && url.pathname === "/robots.txt")
+      return send(
+        res,
+        200,
+        `User-agent: *\nAllow: /\n\n# Agents: the protocol for this site is at ${base}/llms.txt\n`,
+        "text/plain",
+      );
+    if (req.method === "POST" && url.pathname === "/find-price") {
+      const body = await readBody(req);
+      const { status, out } = await findPrice(body);
+      return send(res, status, out);
+    }
     if (req.method === "GET" && url.pathname === "/panel") return send(res, 200, panelPage, "text/html");
     if (req.method === "GET" && url.pathname === "/api/sessions") {
       const persisted = listSessionRecs().map((rec) => ({
