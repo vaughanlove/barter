@@ -781,20 +781,21 @@ async function findPrice(body) {
   const text = (windows.length ? windows.join("\n---\n") : fullText).slice(0, 14_000);
   const base = (process.env.META_API_BASE_URL ?? "https://api.meta.ai/v1").replace(/\/$/, "");
   const model = process.env.JEV_MODEL ?? "muse-spark-1.3";
-  const res = await fetch(`${base}/chat/completions`, {
+  const prompt = `You are the JEV price classifier. Find the current selling price of the product "${product}" in this page text. Return ONLY JSON: {"price": number|null, "currency": string, "snippet": string, "confidence": number}. price is in dollars as a plain number (convert integer cents only when the page clearly prices in cents). snippet is the exact short page text the price came from. Choose the one-time purchase price for a single unit of the named product, the default variant a buyer gets by clicking buy. Avoid subscriptions, multipacks, bundles, refills, other products, shipping, and was/now strikethrough originals.\n\nPAGE TEXT:\n${text}`;
+  const useResponses = (process.env.META_PROTOCOL ?? "") === "responses";
+  const res = await fetch(useResponses ? `${base}/responses` : `${base}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      max_tokens: 3000,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "user",
-          content: `You are the JEV price classifier. Find the current selling price of the product "${product}" in this page text. Return ONLY JSON: {"price": number|null, "currency": string, "snippet": string, "confidence": number}. price is in dollars as a plain number (convert integer cents only when the page clearly prices in cents). snippet is the exact short page text the price came from. Choose the one-time purchase price for a single unit of the named product, the default variant a buyer gets by clicking buy. Avoid subscriptions, multipacks, bundles, refills, other products, shipping, and was/now strikethrough originals.\n\nPAGE TEXT:\n${text}`,
-        },
-      ],
-    }),
+    body: JSON.stringify(
+      useResponses
+        ? { model, input: prompt, max_output_tokens: 3000, text: { format: { type: "json_object" } } }
+        : {
+            model,
+            max_tokens: 3000,
+            response_format: { type: "json_object" },
+            messages: [{ role: "user", content: prompt }],
+          },
+    ),
     signal: AbortSignal.timeout(30_000),
   }).catch(() => null);
   if (!res || !res.ok) {
@@ -804,7 +805,14 @@ async function findPrice(body) {
   const data = await res.json().catch(() => ({}));
   let parsed = {};
   try {
-    parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
+    const content =
+      data.choices?.[0]?.message?.content ??
+      data.output_text ??
+      (Array.isArray(data.output)
+        ? data.output.flatMap((o) => o.content ?? []).find((c) => c.type === "output_text")?.text
+        : undefined) ??
+      "{}";
+    parsed = JSON.parse(content);
   } catch { /* fall through with empty */ }
   return {
     status: 200,
