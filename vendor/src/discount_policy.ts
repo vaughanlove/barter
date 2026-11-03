@@ -7,6 +7,8 @@ export interface PolicyDecision {
   reason: string;
   source?: string;
   style?: string;
+  model?: string;
+  runtime?: string;
 }
 
 // Hidden floor. Never exposed via the API or any message.

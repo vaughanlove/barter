@@ -486,3 +486,80 @@ code {
   color: #55534c;
   font-size: 14.5px;
 }
+.ask {
+  border-top: 2px solid #1c1c1a;
+  padding-top: 16px;
+}
+.ask-lede {
+  font-size: 15.5px;
+  line-height: 1.55;
+}
+.ask-log {
+  margin: 14px 0 4px;
+}
+.ask-msg {
+  border-top: 1px solid #ddd9cc;
+  padding: 9px 0;
+}
+.ask-who {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b6b66;
+  margin-bottom: 3px;
+}
+.ask-msg p {
+  font-size: 15.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.ask-form {
+  margin-top: 12px;
+}
+.ask-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b6b66;
+  margin-bottom: 6px;
+}
+.ask-row {
+  display: flex;
+  gap: 8px;
+}
+.ask-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 15.5px;
+  padding: 8px 10px;
+  border: 1px solid #1c1c1a;
+  border-radius: 3px;
+  background: #fff;
+  color: #1c1c1a;
+}
+.ask-row button {
+  flex: none;
+  font: inherit;
+  font-size: 15.5px;
+  padding: 8px 16px;
+  border: 1px solid #1c1c1a;
+  border-radius: 3px;
+  background: #1c1c1a;
+  color: #fbfaf7;
+  cursor: pointer;
+}
+.ask-row button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.ask-status {
+  font-size: 13.5px;
+  color: #55534c;
+  margin-top: 8px;
+  min-height: 1.2em;
+}

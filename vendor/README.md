@@ -32,6 +32,10 @@ Modeled on [Cliffside Retail](https://www.cliffside-retail.com/developers), the 
 
 `src/telemetry.ts` — OpenTelemetry-shaped log emission for every event (`vendor.conversation.created`, `vendor.quote.issued`, `vendor.proof.received/verified/rejected`, `vendor.offer.countered/held/floor`). Each event is printed as one JSON line on stdout and, if `OTEL_EXPORTER_OTLP_ENDPOINT` is set, POSTed as OTLP/HTTP JSON to `{endpoint}/v1/logs` — feed either stream into the demo control panel.
 
+`src/llm_policy.ts` — Muse Spark on [TanStack AI](https://tanstack.com/ai/latest) (`@tanstack/ai` 1.0). The Meta API is an OpenAI-compatible Chat Completions endpoint, so the generic `openaiCompatibleText` adapter from `@tanstack/ai-openai/compatible` points at `META_API_BASE_URL` (default `https://api.meta.ai/v1`) with `MODEL_API_KEY` and model `VENDOR_MODEL` (default `muse-spark-1.3`). Counter-proposals use structured output in JSON-object mode (the mode the Meta API supports), validated against a zod schema before the deterministic guard in `discount_policy.ts` disposes. Any model failure returns `null` and the guard falls back to its deterministic step. Each accepted proposal records provenance on its events: `model`, `modelProvider: "Meta"`, and `runtime` (`VENDOR_AGENT_RUNTIME`, default `TanStack AI`; set explicitly on both Railway vendor services).
+
+`POST /api/chat` + `src/main.ts` — the storefront page is vanilla TypeScript. Its "Ask this vendor" box uses `ChatClient` from `@tanstack/ai-client` against `/api/chat`, which streams the same TanStack AI adapter over SSE (`chat()` + `toServerSentEventsResponse`) with a storefront-only system prompt. The chat can explain the shop and the proof-gated barter flow; it cannot offer discounts or move prices. Without `MODEL_API_KEY` the endpoint returns `503` and the page keeps its static content.
+
 ## Run
 
 ```sh

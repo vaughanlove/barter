@@ -1,4 +1,5 @@
 import "./style.css";
+import { ChatClient, fetchServerSentEvents } from "@tanstack/ai-client";
 
 interface Tactics {
   vendor: string;
@@ -26,7 +27,11 @@ interface Tactics {
 }
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
-const esc = (s: unknown) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+const esc = (s: unknown) =>
+  String(s).replace(
+    /[&<>"]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!,
+  );
 const money = (n: number) => `$${n.toFixed(2)}`;
 
 app.innerHTML = `
@@ -57,6 +62,20 @@ app.innerHTML = `
     <h2 id="contextTitle">Why those are our numbers</h2>
     <blockquote id="tacticPolicy">Loading our policy…</blockquote>
     <dl class="tactic-grid" id="tacticGrid"></dl>
+  </section>
+
+  <section class="ask" aria-labelledby="askTitle">
+    <h2 id="askTitle">Ask this vendor</h2>
+    <p class="ask-lede">Questions about the shop and how bargaining works. Discounts never happen in chat — they only move against a verified price through the agent API.</p>
+    <div class="ask-log" id="askLog" aria-live="polite"></div>
+    <form class="ask-form" id="askForm">
+      <label class="ask-label" for="askInput">Your question</label>
+      <div class="ask-row">
+        <input id="askInput" name="question" type="text" autocomplete="off" placeholder="How does the discount work?" />
+        <button type="submit" id="askButton">Ask</button>
+      </div>
+      <p class="ask-status" id="askStatus"></p>
+    </form>
   </section>
 
   <section class="agent-box">
@@ -101,7 +120,12 @@ fetch("/api/tactics")
 
     const rows: [string, string][] = [
       ["What makes us move", "A lower price, proven. A claim changes nothing."],
-      ["How we move", bold ? `Bold steps, about ${t.counterStyle.pct}% under the proven price.` : "One cent under the proven price at a time."],
+      [
+        "How we move",
+        bold
+          ? `Bold steps, about ${t.counterStyle.pct}% under the proven price.`
+          : "One cent under the proven price at a time.",
+      ],
       ["Where we stop", `${t.discountCeilingPct}% below the proven price, checked by code.`],
     ];
     document.querySelector("#tacticGrid")!.innerHTML = rows
@@ -114,3 +138,51 @@ fetch("/api/tactics")
     document.querySelector("#tacticPolicy")!.textContent =
       "“Move only on a verified lower price, in measured steps, and never below the discount ceiling.”";
   });
+
+// Storefront chat, powered by TanStack AI (@tanstack/ai-client). The
+// server route (POST /api/chat) holds the model key and the system
+// prompt; this page only renders the streamed snapshot. When the model
+// is not configured the form reports that instead of failing silently.
+const askLog = document.querySelector<HTMLDivElement>("#askLog")!;
+const askForm = document.querySelector<HTMLFormElement>("#askForm")!;
+const askInput = document.querySelector<HTMLInputElement>("#askInput")!;
+const askButton = document.querySelector<HTMLButtonElement>("#askButton")!;
+const askStatus = document.querySelector<HTMLParagraphElement>("#askStatus")!;
+
+const storefrontChat = new ChatClient({
+  connection: fetchServerSentEvents("/api/chat"),
+  threadId: "vendor-storefront",
+});
+
+function renderAsk(): void {
+  const { messages, isLoading, error } = storefrontChat.getSnapshot();
+  askLog.innerHTML = messages
+    .map((message) => {
+      const text = message.parts.map((part) => (part.type === "text" ? part.content : "")).join("");
+      if (!text) return "";
+      const who = message.role === "user" ? "You" : "Vendor";
+      const cls = message.role === "user" ? "ask-user" : "ask-vendor";
+      return `<div class="ask-msg ${cls}"><span class="ask-who">${who}</span><p>${esc(text)}</p></div>`;
+    })
+    .join("");
+  askButton.disabled = isLoading;
+  askStatus.textContent = error
+    ? "The vendor agent could not answer just now. The shop details above still stand."
+    : isLoading
+      ? "Thinking…"
+      : "";
+}
+
+storefrontChat.subscribeSnapshot(renderAsk);
+storefrontChat.attach();
+renderAsk();
+
+askForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const question = askInput.value.trim();
+  if (!question) return;
+  askInput.value = "";
+  void storefrontChat.sendMessage(question).catch(() => {
+    // Snapshot error state renders the fallback note in renderAsk.
+  });
+});

@@ -22,8 +22,9 @@ import {
   hardFallback,
   type PolicyDecision,
 } from "./discount_policy.ts";
-import { proposeCounter } from "./llm_policy.ts";
+import { createVendorTextAdapter, isVendorModelConfigured, proposeCounter } from "./llm_policy.ts";
 import { DEMO_SKU, getProduct, listProducts } from "./inventory.ts";
+import { chat, chatParamsFromRequestBody, toServerSentEventsResponse } from "@tanstack/ai";
 
 const OPENAPI = {
   openapi: "3.1.0",
@@ -77,25 +78,28 @@ function businessContext() {
   const now = new Date();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const daysLeft = daysInMonth - now.getDate();
-  const pacePct = Math.min(118, Math.round(((now.getDate() / daysInMonth) * (bold ? 82 : 97)) + ((hash >> 5) % 9)));
+  const pacePct = Math.min(
+    118,
+    Math.round((now.getDate() / daysInMonth) * (bold ? 82 : 97) + ((hash >> 5) % 9)),
+  );
   const reloadUnits = monthlyDemand;
   const cycleWeeks = Number(process.env.VENDOR_RESTOCK_WEEKS ?? (bold ? 4 : 2));
   const cycleDays = cycleWeeks * 7;
-  const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86_400_000);
+  const dayOfYear = Math.floor(
+    (now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86_400_000,
+  );
   const stockedDaysAgo = dayOfYear % cycleDays;
   const daysToRestock = cycleDays - stockedDaysAgo;
   const overstocked = coverMonths >= 2;
   const reloadPressure = daysToRestock <= 5;
-  const urgency = overstocked && reloadPressure
-    ? "high"
-    : overstocked || pacePct < 85
-      ? "rising"
-      : "low";
-  const why = urgency === "high"
-    ? `Last stocked ${stockedDaysAgo} days ago on a ${cycleWeeks}-week cycle, and the next reload lands in ${daysToRestock} days. With ${coverMonths.toFixed(1)} months of cover on hand, discounting now beats making room later.`
-    : urgency === "rising"
-      ? `Last stocked ${stockedDaysAgo} days ago on a ${cycleWeeks}-week cycle. Stock cover is ${coverMonths.toFixed(1)} months, so we will deal, but we are not in a rush.`
-      : `Last stocked ${stockedDaysAgo} days ago on a ${cycleWeeks}-week cycle. Fresh, lean stock at ${coverMonths.toFixed(1)} months of cover, so margin matters more than speed.`;
+  const urgency =
+    overstocked && reloadPressure ? "high" : overstocked || pacePct < 85 ? "rising" : "low";
+  const why =
+    urgency === "high"
+      ? `Last stocked ${stockedDaysAgo} days ago on a ${cycleWeeks}-week cycle, and the next reload lands in ${daysToRestock} days. With ${coverMonths.toFixed(1)} months of cover on hand, discounting now beats making room later.`
+      : urgency === "rising"
+        ? `Last stocked ${stockedDaysAgo} days ago on a ${cycleWeeks}-week cycle. Stock cover is ${coverMonths.toFixed(1)} months, so we will deal, but we are not in a rush.`
+        : `Last stocked ${stockedDaysAgo} days ago on a ${cycleWeeks}-week cycle. Fresh, lean stock at ${coverMonths.toFixed(1)} months of cover, so margin matters more than speed.`;
   return {
     stockUnits,
     monthlyDemandUnits: monthlyDemand,
@@ -117,7 +121,10 @@ function stockPosture(units: number): string {
   return "tight stock";
 }
 
-function decisionFactors(conv: Conversation, resultingPrice: number): Record<string, string | number> {
+function decisionFactors(
+  conv: Conversation,
+  resultingPrice: number,
+): Record<string, string | number> {
   const factors: Record<string, string | number> = {};
   if (typeof conv.stock === "number") {
     factors.stockUnits = conv.stock;
@@ -126,11 +133,15 @@ function decisionFactors(conv: Conversation, resultingPrice: number): Record<str
   const ask = conv.ask ?? conv.price;
   if (ask > 0) factors.discountUsedPct = Math.round(((ask - resultingPrice) / ask) * 1000) / 10;
   if (typeof conv.floorPrice === "number" && resultingPrice > 0) {
-    factors.headroomToCeilingPct = Math.round(((resultingPrice - conv.floorPrice) / resultingPrice) * 1000) / 10;
+    factors.headroomToCeilingPct =
+      Math.round(((resultingPrice - conv.floorPrice) / resultingPrice) * 1000) / 10;
   }
   const poolCap = Number(process.env.VENDOR_MONTHLY_POOL_USD ?? 0);
   if (poolCap > 0) {
-    factors.promoPoolRemainingPct = Math.max(0, Math.round(((poolCap - promoPoolSpent) / poolCap) * 1000) / 10);
+    factors.promoPoolRemainingPct = Math.max(
+      0,
+      Math.round(((poolCap - promoPoolSpent) / poolCap) * 1000) / 10,
+    );
   }
   return factors;
 }
@@ -149,6 +160,22 @@ const verifierTimeoutMs = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 10_000;
 })();
 const vendorName = process.env.VENDOR_NAME ?? "Barter Dummy Vendor";
+
+// System prompt for the public storefront chat (POST /api/chat, consumed
+// by the TypeScript page via @tanstack/ai-client). Informational only:
+// it can explain the shop and the proof-gated barter flow, but it holds
+// no pricing power — counters still come from the guard in this file.
+function storefrontSystemPrompt(): string {
+  const products = listProducts()
+    .map((p) => `${p.name} (${p.sku}) at $${p.price}`)
+    .join("; ");
+  return [
+    `You are the storefront assistant for ${vendorName}. Answer questions about this shop, its products, and how bargaining works here. Keep answers short: one to three sentences.`,
+    `Products: ${products}.`,
+    "How pricing works: this vendor only discounts against a cryptographically verified lower price (a TLSNotary proof) presented through the barter API (POST /poppy/conversations, discovered via /.well-known/poppy.json). You cannot offer discounts, change prices, or promise deals in chat. If asked for a discount, explain that proof-based flow.",
+    "Never invent prices, stock counts, or policies beyond what is stated here.",
+  ].join("\n");
+}
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -200,11 +227,21 @@ async function decideAnchored(conv: Conversation, attested: number): Promise<Pol
   conv.rounds = (conv.rounds ?? 0) + 1;
   const factors = decisionFactors(conv, conv.price);
   const context = [
-    typeof factors.stockUnits === "number" ? `about ${factors.stockUnits} units in stock (${factors.stockPosture})` : "",
-    typeof factors.discountUsedPct === "number" ? `${factors.discountUsedPct}% of the opening ask already discounted` : "",
-    typeof factors.headroomToCeilingPct === "number" ? `${factors.headroomToCeilingPct}% of headroom left above the bottom line` : "",
-    typeof factors.promoPoolRemainingPct === "number" ? `${factors.promoPoolRemainingPct}% of the monthly promo pool remaining` : "",
-  ].filter(Boolean).join("; ");
+    typeof factors.stockUnits === "number"
+      ? `about ${factors.stockUnits} units in stock (${factors.stockPosture})`
+      : "",
+    typeof factors.discountUsedPct === "number"
+      ? `${factors.discountUsedPct}% of the opening ask already discounted`
+      : "",
+    typeof factors.headroomToCeilingPct === "number"
+      ? `${factors.headroomToCeilingPct}% of headroom left above the bottom line`
+      : "",
+    typeof factors.promoPoolRemainingPct === "number"
+      ? `${factors.promoPoolRemainingPct}% of the monthly promo pool remaining`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
   const proposal = await proposeCounter({
     product: conv.product ?? conv.sku,
     current: conv.price,
@@ -224,6 +261,8 @@ async function decideAnchored(conv: Conversation, attested: number): Promise<Pol
       reason: "best possible price reached",
       source: "Muse Spark proposal clamped by deterministic floor",
       style: proposal.style,
+      model: proposal.model,
+      runtime: proposal.runtime,
     };
   }
   const poolCap = Number(process.env.VENDOR_MONTHLY_POOL_USD ?? 0);
@@ -245,6 +284,8 @@ async function decideAnchored(conv: Conversation, attested: number): Promise<Pol
     reason: proposal.style || "verified lower offer",
     source: "Muse Spark proposal checked by deterministic guard",
     style: proposal.style,
+    model: proposal.model,
+    runtime: proposal.runtime,
   };
 }
 
@@ -340,10 +381,47 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
         },
         decisionProcess:
           "Muse Spark may propose a counter in the written policy style. A deterministic guard can reject it, clamp it to the discount ceiling, or replace it.",
-        fallback: "Without a usable model proposal, the price steps down 8%, then 5%, then 3% as it nears the discount ceiling.",
+        fallback:
+          "Without a usable model proposal, the price steps down 8%, then 5%, then 3% as it nears the discount ceiling.",
         monthlyPromoPoolUsd: pool > 0 ? pool : null,
         business: businessContext(),
       });
+      return true;
+    }
+    if (req.method === "POST" && path === "/api/chat") {
+      // TanStack AI storefront chat: streams Muse Spark over SSE for
+      // the vendor page's @tanstack/ai-client ChatClient. Without a
+      // configured model key the page degrades to its static content.
+      const adapter = createVendorTextAdapter();
+      if (!adapter || !isVendorModelConfigured()) {
+        send(res, 503, { error: "vendor chat unavailable: model not configured" });
+        return true;
+      }
+      const { messages, threadId, runId } = await chatParamsFromRequestBody(await readJson(req));
+      const stream = chat({
+        adapter,
+        messages,
+        threadId,
+        runId,
+        systemPrompts: [storefrontSystemPrompt()],
+        modelOptions: { max_tokens: 400 },
+      });
+      const response = toServerSentEventsResponse(stream);
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      const reader = response.body?.getReader();
+      if (!reader) {
+        res.end();
+        return true;
+      }
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      } finally {
+        res.end();
+      }
       return true;
     }
     if (req.method === "GET" && path === "/openapi.json") {
@@ -491,6 +569,8 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
             ...decisionFactors(conv, conv.price),
             reason: decision.reason,
             ...(decision.source ? { source: decision.source } : {}),
+            ...(decision.model ? { model: decision.model, modelProvider: "Meta" } : {}),
+            ...(decision.runtime ? { runtime: decision.runtime } : {}),
             ...(decision.style ? { style: decision.style } : {}),
           });
           send(res, 200, { type: "offer", data: { price: conv.price, note: decision.reason } });
@@ -503,6 +583,8 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
           ...decisionFactors(conv, conv.price),
           reason: decision.reason,
           ...(decision.source ? { source: decision.source } : {}),
+          ...(decision.model ? { model: decision.model, modelProvider: "Meta" } : {}),
+          ...(decision.runtime ? { runtime: decision.runtime } : {}),
           ...(decision.style ? { style: decision.style } : {}),
         });
         send(res, 200, {

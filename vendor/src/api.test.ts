@@ -180,6 +180,54 @@ describe("bartering tactics", () => {
   });
 });
 
+describe("decision provenance", () => {
+  it("records the Spark model and runtime behind an accepted proposal", async () => {
+    process.env.MODEL_API_KEY = "test-key";
+    process.env.VENDOR_MODEL = "muse-spark-1.3";
+    process.env.VENDOR_AGENT_RUNTIME = "TanStack AI";
+    process.env.VENDOR_POLICY_TEXT = "Move boldly to win the sale.";
+    process.env.VENDOR_MARKUP_PCT = "5";
+    process.env.VENDOR_FLOOR_PCT = "8";
+    process.env.VENDOR_UNDERCUT_MODE = "percent";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/chat/completions")) {
+        // TanStack AI streams Chat Completions, so the stub answers with
+        // an SSE body carrying the same proposal JSON.
+        const content = JSON.stringify({ price: 18.5, style: "bold step to win" });
+        const chunk = (delta: Record<string, unknown>, finishReason: string | null) =>
+          `data: ${JSON.stringify({ id: "chatcmpl-test", object: "chat.completion.chunk", created: 0, model: "muse-spark-1.3", choices: [{ index: 0, delta, finish_reason: finishReason }] })}\n\n`;
+        return new Response(
+          chunk({ role: "assistant", content }, null) + chunk({}, "stop") + "data: [DONE]\n\n",
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      return originalFetch(input, init);
+    }) as typeof fetch;
+    try {
+      const created = await postJson("/poppy/conversations", {
+        product: "Spark Soap",
+        presentationB64: "price-20",
+      });
+      const id = String(created.body.id);
+      await barter(id, "price-19");
+      const response = await fetch(`${baseUrl}/poppy/conversations/${id}/events`);
+      const body = (await response.json()) as { events: Record<string, unknown>[] };
+      const counter = body.events.find((event) => event.event === "vendor.offer.countered");
+      expect(counter).toMatchObject({
+        source: "Muse Spark proposal checked by deterministic guard",
+        model: "muse-spark-1.3",
+        modelProvider: "Meta",
+        runtime: "TanStack AI",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+      delete process.env.MODEL_API_KEY;
+      delete process.env.VENDOR_AGENT_RUNTIME;
+    }
+  });
+});
+
 describe("proof-anchored mirror pricing", () => {
   async function anchored(): Promise<string> {
     process.env.VENDOR_MARKUP_PCT = "5";
@@ -288,5 +336,57 @@ describe("proof-gated barter", () => {
         "vendor.offer.floor",
       ]),
     );
+  });
+});
+
+describe("storefront chat (TanStack AI)", () => {
+  it("reports unavailable when no model key is configured", async () => {
+    delete process.env.MODEL_API_KEY;
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [], threadId: "storefront-test", runId: "run-1" }),
+    });
+    expect(response.status).toBe(503);
+  });
+
+  it("streams a storefront answer over SSE when the model is configured", async () => {
+    process.env.MODEL_API_KEY = "test-key";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof URL ? input.href : input instanceof Request ? input.url : input;
+      if (url.includes("/chat/completions")) {
+        const chunk = (delta: Record<string, unknown>, finishReason: string | null) =>
+          `data: ${JSON.stringify({ id: "chatcmpl-test", object: "chat.completion.chunk", created: 0, model: "muse-spark-1.3", choices: [{ index: 0, delta, finish_reason: finishReason }] })}\n\n`;
+        return new Response(
+          chunk({ role: "assistant", content: "We sell outdoor gear." }, null) +
+            chunk({}, "stop") +
+            "data: [DONE]\n\n",
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      return originalFetch(input, init);
+    }) as typeof fetch;
+    try {
+      const response = await fetch(`${baseUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: "storefront-test",
+          runId: "run-1",
+          state: {},
+          tools: [],
+          context: [],
+          forwardedProps: {},
+          messages: [{ id: "m1", role: "user", content: "What do you sell?" }],
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("text/event-stream");
+      expect(await response.text()).toContain("We sell outdoor gear.");
+    } finally {
+      globalThis.fetch = originalFetch;
+      delete process.env.MODEL_API_KEY;
+    }
   });
 });
