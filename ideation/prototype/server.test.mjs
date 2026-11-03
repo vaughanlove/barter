@@ -193,7 +193,10 @@ test("session actions can be inspected with the vendor decision trace", async ()
             { key: "price", value: { doubleValue: 1.96 } },
             { key: "attestedPrice", value: { doubleValue: 2 } },
             { key: "reason", value: { stringValue: "penny under, holding firm" } },
-            { key: "source", value: { stringValue: "deterministic fallback" } },
+            { key: "source", value: { stringValue: "Muse Spark proposal checked by deterministic guard" } },
+            { key: "model", value: { stringValue: "muse-spark-1.3" } },
+            { key: "modelProvider", value: { stringValue: "Meta" } },
+            { key: "runtime", value: { stringValue: "TanStack AI" } },
             { key: "stockUnits", value: { doubleValue: 148 } },
             { key: "stockPosture", value: { stringValue: "deep stock" } },
             { key: "discountUsedPct", value: { doubleValue: 4.8 } },
@@ -210,7 +213,12 @@ test("session actions can be inspected with the vendor decision trace", async ()
   assert.match(html, /class="tdetail"/);
   assert.match(html, /Actor: Ridgeline Outfitters/);
   assert.match(html, /Decision note: penny under, holding firm/);
-  assert.match(html, /Decision source: deterministic fallback/);
+  assert.match(html, /Vendor decisions in this receipt:/);
+  assert.match(html, /1 proposed by Muse Spark/);
+  assert.match(html, /ttag spark">SPARK/);
+  assert.match(html, /Model behind the decision: Muse Spark \(muse-spark-1\.3\) by Meta/);
+  assert.match(html, /Vendor agent runtime: TanStack AI/);
+  assert.match(html, /Decision source: Muse Spark proposal checked by deterministic guard/);
   assert.match(html, /Stock picture: about 148 units \(deep stock\)/);
   assert.match(html, /Discount picture: 4\.8% of the opening ask used/);
   assert.match(html, /Promo pool: 91% remaining/);

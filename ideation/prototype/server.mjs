@@ -474,10 +474,12 @@ const STYLE = `
   .lbar{height:9px;background:#1c1c1a;flex:none}
   .lstep .lprice{font-weight:700;white-space:nowrap}
   .lstep .lnote{font-size:12.5px;color:#6b6b66;white-space:nowrap}
+  .lstep .lsub{display:block;font-size:12.5px;line-height:1.45;color:#6b6b66;margin-top:2px}
   .lstep.loopstep{position:relative;padding-right:34px}
   .looparrow{position:absolute;right:8px;top:58%;font-size:24px;line-height:1;color:#C70000}
-  .lstep.best .lprice{color:#C70000}
+  .lstep.best .lprice{color:#C70000;margin-left:auto;margin-right:6px}
   .lstep.best .lbar{background:#C70000}
+  .lstep.best .licon{margin-left:4px}
   .pflow{display:flex;align-items:stretch;gap:10px;margin:16px 0 0}
   .pnode{flex:1;border:1px solid #1c1c1a;padding:12px 14px;display:flex;flex-direction:column;gap:4px;justify-content:center}
   .pnode .ptag{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#6b6b66}
@@ -532,6 +534,7 @@ const STYLE = `
     .ladder .lcap{color:#a9a9a1}
     .lstep{border-bottom-color:#2c2c28}
     .lstep .lnote{color:#a9a9a1}
+    .lstep .lsub{color:#a9a9a1}
     .looparrow{color:#ff5147}
     .lbar{background:#ecece7}
     .lstep.best .lprice{color:#ff5147}
@@ -571,8 +574,8 @@ verifiable proof, then uses that proof to barter with vendors.
 No app to install and no price taken on faith: vendors only move
 on prices they can verify themselves with
 <a href="https://github.com/tlsnotary/tlsn">TLSNotary</a>. In this
-demo the companies are simulated. The proofs, the verification,
-and the negotiation are real.</p>
+demo the companies are simulated. The real product search, the
+proofs, the verification, and the negotiation are real.</p>
 <div class="cardwrap">
 <div class="grules"><i></i><i></i><i></i><i></i></div>
 <div class="kicker">Say this to your agent</div>
@@ -590,7 +593,7 @@ and the negotiation are real.</p>
 <div class="ladder">
 <h2>What the protocol makes possible</h2>
 <ol class="lsteps">
-<li class="lstep"><span class="lname">Your agent finds a price online</span><span class="lbar" style="width:142px"></span><span class="lprice">$17.19</span></li>
+<li class="lstep"><span class="lname">Your agent finds a price online<span class="lsub">A true search for the real product. The proof it generates is real, and anyone can validate it.</span></span><span class="lbar" style="width:142px"></span><span class="lprice">$17.19</span></li>
 <li class="lstep"><span class="lname"><svg class="licon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#C70000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>Proof generated: a provable presentation of that price</span><span class="lnote">TLSNotary presentation</span></li>
 <li class="lstep loopstep"><span class="lname">Vendors stocking the product verify the proof</span><span class="lnote">TLSNotary verification</span><span class="looparrow" aria-hidden="true">&#8597;</span></li>
 <li class="lstep loopstep"><span class="lname">Multiple rounds of counter-offers, each backed by its own proof</span><span class="lprice">&darr; lower each round</span></li>
@@ -817,6 +820,8 @@ function eventDetailLines(e, proofs = []) {
   if (e.note) lines.push(`Vendor note: ${e.note}`);
   if (e.style) lines.push(`Move style: ${e.style}`);
   if (e.source) lines.push(`Decision source: ${e.source}`);
+  if (e.model) lines.push(`Model behind the decision: Muse Spark (${e.model})${e.modelProvider ? ` by ${e.modelProvider}` : ""}`);
+  if (e.runtime) lines.push(`Vendor agent runtime: ${e.runtime}`);
   if (typeof e.stockUnits === "number") lines.push(`Stock picture: about ${e.stockUnits} units${e.stockPosture ? ` (${e.stockPosture})` : ""}. Simulated for this demo company.`);
   if (typeof e.discountUsedPct === "number") lines.push(`Discount picture: ${e.discountUsedPct}% of the opening ask used${typeof e.headroomToCeilingPct === "number" ? `, ${e.headroomToCeilingPct}% of headroom left above the bottom line` : ""}.`);
   if (typeof e.promoPoolRemainingPct === "number") lines.push(`Promo pool: ${e.promoPoolRemainingPct}% remaining this month.`);
@@ -838,6 +843,21 @@ function eventDetailLines(e, proofs = []) {
     .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`);
   if (fields.length) lines.push(`Recorded fields: ${fields.join(" · ")}`);
   return lines;
+}
+
+function decisionSummaryHtml(rec) {
+  const decisions = listEvents(rec.id).filter((e) =>
+    ["vendor.offer.countered", "vendor.offer.floor", "vendor.offer.held"].includes(String(e.type)),
+  );
+  if (!decisions.length) return "";
+  const spark = decisions.filter((e) => e.model || String(e.source ?? "").startsWith("Muse Spark"));
+  const fallback = decisions.length - spark.length;
+  const models = [...new Set(spark.map((e) => e.model).filter(Boolean))];
+  const sparkText = spark.length
+    ? `<strong>${spark.length} proposed by Muse Spark</strong>${models.length ? ` (${esc(models.join(", "))})` : ""}`
+    : "none proposed by Muse Spark";
+  const fallbackText = fallback ? ` · ${fallback} by deterministic fallback` : "";
+  return `<p class="receipt-note">Vendor decisions in this receipt: ${sparkText}${fallbackText}</p>`;
 }
 
 function treeRowsHtml(rec) {
@@ -871,7 +891,8 @@ function treeRowsHtml(rec) {
       ? (proofs.find((pr) => String(pr.hash).startsWith(String(e.hash ?? "")))?.verdict ?? "")
       : "";
     const detail = eventDetailLines(e, proofs).map((line) => esc(line)).join("<br>");
-    return `<div class="trow" data-type="${esc(type)}" data-price="${e.price ?? ""}" tabindex="0" role="button" aria-expanded="false" title="Inspect this action"><span class="ttag">${esc(type.split(".")[0].toUpperCase())}</span><span class="tcall">${esc(eventCall(e))}</span>${verdict ? `<span class="ttag verdict">${esc(verdict)}</span>` : ""}<span class="tmove ${mv.cls}">${mv.price !== null ? esc(mv.tag) : ""}</span></div><div class="tdetail" hidden>${detail}</div>`;
+    const sparkTag = e.model || String(e.source ?? "").startsWith("Muse Spark") ? `<span class="ttag spark">SPARK</span>` : "";
+    return `<div class="trow" data-type="${esc(type)}" data-price="${e.price ?? ""}" tabindex="0" role="button" aria-expanded="false" title="Inspect this action"><span class="ttag">${esc(type.split(".")[0].toUpperCase())}</span><span class="tcall">${esc(eventCall(e))}</span>${sparkTag}${verdict ? `<span class="ttag verdict">${esc(verdict)}</span>` : ""}<span class="tmove ${mv.cls}">${mv.price !== null ? esc(mv.tag) : ""}</span></div><div class="tdetail" hidden>${detail}</div>`;
   });
   return { rows: rows.join(""), lastPrice, count: rows.filter(Boolean).length };
 }
@@ -887,6 +908,8 @@ const page = (rec, base) => {
   .trow:hover{background:#f4f2ea}
   .ttag{font-size:10px;letter-spacing:.06em;border:1px solid #1c1c1a;padding:0 5px;flex:none}
   .ttag.verdict{background:#1c1c1a;color:#fbfaf7}
+  .ttag.spark{color:#C70000;border-color:#C70000;font-weight:700}
+  .receipt-note{font-size:13.5px;line-height:1.55;color:#55534c;border:1px solid #d8d5c9;padding:9px 12px;margin:14px 0}
   .tcall{overflow:hidden;text-overflow:ellipsis}
   .tmove{margin-left:auto;flex:none;font-size:11px}
   .tmove.down{color:#137333}.tmove.up{color:#b3261e}.tmove.flat{color:#6b6b66}
@@ -897,6 +920,7 @@ const page = (rec, base) => {
 <h1>${esc(rec.product || "Your barter")}</h1>
 <p class="lede">Session ${rec.id} · <span id="statusText">${esc(rec.status)}</span>${rec.budget != null ? ` · budget $${rec.budget}` : ""}${rec.keyphrase ? ` · keyphrase <code>${esc(rec.keyphrase)}</code>` : ""}</p>
 <div id="bestSlot">${rec.best_price != null ? `<div class="best"><div>Best offer${rec.best_vendor ? ` from ${esc(rec.best_vendor)}` : ""}</div><div class="price">$${rec.best_price}</div></div>` : ""}</div>
+${decisionSummaryHtml(rec)}
 <div class="tree">
 <div class="troot"><span class="ttag">SESSION</span><span class="tcall">session(product="${esc(rec.product)}", status="<span id="rootStatus">${esc(rec.status)}</span>")</span><span class="tmove flat" id="callCount">${tree.count} calls</span></div>
 <div class="tchildren" id="tchildren">${tree.rows || `<div class="trow"><span class="tcall">waiting for the agent to start</span></div>`}</div>
@@ -918,6 +942,8 @@ function detailLines(d){
   if (d.note) lines.push('Vendor note: ' + d.note);
   if (d.style) lines.push('Move style: ' + d.style);
   if (d.source) lines.push('Decision source: ' + d.source);
+  if (d.model) lines.push('Model behind the decision: Muse Spark (' + d.model + ')' + (d.modelProvider ? ' by ' + d.modelProvider : ''));
+  if (d.runtime) lines.push('Vendor agent runtime: ' + d.runtime);
   if (typeof d.stockUnits === 'number') lines.push('Stock picture: about ' + d.stockUnits + ' units' + (d.stockPosture ? ' (' + d.stockPosture + ')' : '') + '. Simulated for this demo company.');
   if (typeof d.discountUsedPct === 'number') lines.push('Discount picture: ' + d.discountUsedPct + '% of the opening ask used' + (typeof d.headroomToCeilingPct === 'number' ? ', ' + d.headroomToCeilingPct + '% of headroom left above the bottom line' : '') + '.');
   if (typeof d.promoPoolRemainingPct === 'number') lines.push('Promo pool: ' + d.promoPoolRemainingPct + '% remaining this month.');
@@ -986,7 +1012,8 @@ function appendRow(d){
   div.setAttribute('role', 'button');
   div.setAttribute('aria-expanded', 'false');
   div.title = 'Inspect this action';
-  div.innerHTML = '<span class="ttag">' + escHtml(type.split('.')[0].toUpperCase()) + '</span><span class="tcall">' + escHtml(type.replace(/^(vendor|muse|notary)\./,'') + '(' + args.join(', ') + ')') + '</span><span class="tmove ' + cls + '">' + escHtml(mv) + '</span>';
+  const sparkTag = (d.model || String(d.source || '').startsWith('Muse Spark')) ? '<span class="ttag spark">SPARK</span>' : '';
+  div.innerHTML = '<span class="ttag">' + escHtml(type.split('.')[0].toUpperCase()) + '</span><span class="tcall">' + escHtml(type.replace(/^(vendor|muse|notary)\./,'') + '(' + args.join(', ') + ')') + '</span>' + sparkTag + '<span class="tmove ' + cls + '">' + escHtml(mv) + '</span>';
   treeEl.appendChild(div);
   treeEl.appendChild(detailElement(d));
   const cc = document.getElementById('callCount');
