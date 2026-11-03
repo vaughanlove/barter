@@ -75,6 +75,10 @@ export default defineRailway(() => {
       VENDOR_MONTHLY_POOL_USD: "250",
       MODEL_API_KEY: preserve(),
       VENDOR_AGENT_RUNTIME: "TanStack AI",
+      // Meta API via the Cloudflare egress proxy (Railway egress is
+      // blocked by Meta). MODEL_API_KEY holds the proxy token, not the
+      // real Meta key; see egress-proxy/README.md.
+      META_API_BASE_URL: "https://barter-meta-egress.vaughanelove.workers.dev/v1",
       VERIFIER_URL: `${PROVE}/verify`,
       VERIFIER_TIMEOUT_MS: "10000",
       OTEL_EXPORTER_OTLP_ENDPOINT: LANDING,
@@ -102,6 +106,10 @@ export default defineRailway(() => {
       VENDOR_MONTHLY_POOL_USD: "100000",
       MODEL_API_KEY: preserve(),
       VENDOR_AGENT_RUNTIME: "TanStack AI",
+      // Meta API via the Cloudflare egress proxy (Railway egress is
+      // blocked by Meta). MODEL_API_KEY holds the proxy token, not the
+      // real Meta key; see egress-proxy/README.md.
+      META_API_BASE_URL: "https://barter-meta-egress.vaughanelove.workers.dev/v1",
       VERIFIER_URL: `${PROVE}/verify`,
       VERIFIER_TIMEOUT_MS: "10000",
       OTEL_EXPORTER_OTLP_ENDPOINT: LANDING,

@@ -1,0 +1,7 @@
+name = "barter-meta-egress"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+workers_dev = true
+
+[vars]
+META_API_BASE_URL = "https://api.meta.ai/v1"

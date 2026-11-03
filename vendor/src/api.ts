@@ -404,7 +404,9 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse): Prom
         threadId,
         runId,
         systemPrompts: [storefrontSystemPrompt()],
-        modelOptions: { max_tokens: 400 },
+        // Muse Spark spends most of its budget reasoning; a small cap
+        // can leave no visible answer, so give it room to do both.
+        modelOptions: { max_tokens: 1200 },
       });
       const response = toServerSentEventsResponse(stream);
       res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
