@@ -616,7 +616,7 @@ proofs, the verification, and the negotiation are real.</p>
 (function rotate() {
   const el = document.getElementById('rotator');
   if (!el) return;
-  const words = ['carpe deodorant', 'kidney beans', 'a case of Moretti'];
+  const words = ['carpe deodorant', 'a box of white cheddar annies', 'a case of Moretti'];
   const chars = 'abcdefghijklmnopqrstuvwxyz';
   let wi = 0;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -658,7 +658,7 @@ poll();
 };
 
 // Reference run linked as public evidence (Dr. Bronner soap).
-const REFERENCE_SESSION = "A3CECA";
+const REFERENCE_SESSION = "0E71CF";
 
 const howItWorksPage = (base) => `<!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -916,6 +916,16 @@ const page = (rec, base) => {
   .trow[role="button"]{cursor:pointer}
   .trow.active{background:#efede6;box-shadow:inset 3px 0 #1c1c1a}
   .tdetail{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.55;background:#f4f2ea;border-bottom:1px solid #d8d5c9;padding:8px 12px 9px 42px;white-space:normal}
+  @media (prefers-color-scheme: dark){
+    .tree{background:#161614;border-color:#ecece7}
+    .tchildren{border-left-color:#3a3a34}
+    .trow:hover{background:#24241f}
+    .trow.active{background:#24241f;box-shadow:inset 3px 0 #ecece7}
+    .tdetail{background:#1d1d1a;border-bottom-color:#3a3a34}
+    .ttag{border-color:#ecece7}
+    .ttag.verdict{background:#ecece7;color:#131313}
+    .receipt-note{color:#a9a9a1;border-color:#3a3a34}
+  }
 </style>
 <h1>${esc(rec.product || "Your barter")}</h1>
 <p class="lede">Session ${rec.id} · <span id="statusText">${esc(rec.status)}</span>${rec.budget != null ? ` · budget $${rec.budget}` : ""}${rec.keyphrase ? ` · keyphrase <code>${esc(rec.keyphrase)}</code>` : ""}</p>
@@ -956,7 +966,7 @@ function detailElement(d){
   const detail = document.createElement('div');
   detail.className = 'tdetail';
   detail.hidden = true;
-  detail.textContent = detailLines(d).join('\n');
+  detail.textContent = detailLines(d).join('\\n');
   detail.style.whiteSpace = 'pre-wrap';
   return detail;
 }

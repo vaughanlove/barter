@@ -53,7 +53,7 @@ test("apex serves minimal Poppy discovery for the requested domain", async () =>
   assert.match(home, /Simulated vendors: <a href="https:\/\/basecamp\.barter\.computer">Basecamp Supply<\/a>/);
   assert.match(home, /<a href="https:\/\/ridgeline\.barter\.computer">Ridgeline Outfitters<\/a>/);
   assert.match(home, /href="\/how-it-works"/);
-  assert.match(home, /href="\/s\/A3CECA"/);
+  assert.match(home, /href="\/s\/0E71CF"/);
 
   const how = await (await fetch(`${base}/how-it-works`)).text();
   assert.match(how, /How the personal agent follows the protocol/);
