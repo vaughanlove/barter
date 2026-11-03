@@ -20,6 +20,7 @@ It exists for two audiences:
 
 ```sh
 cd personal-agent
+pnpm install
 MODEL_API_KEY=... node run.mjs "Carpe deodorant"
 node run.mjs "Dr. Bronner soap" --keyphrase "cedar lather grove"
 ```
@@ -45,11 +46,22 @@ tests a laptop build or production:
 
 ## How it works
 
-Muse Spark plans with tools; deterministic code executes them.
-The planner gets Meta web search grounding plus a small function
-set that mirrors the protocol: `create_session`, `find_price`,
-`prove`, `store_proof`, `open_conversation`, `prove_quote`,
-`barter`, `post_event`, `finish`. Proofs are handled by short ids,
-never pasted into the model context. Prices and proofs only ever
-move through tool results, and the run ends at an approval
-question. Nothing is bought.
+Muse Spark plans with tools on TanStack AI; deterministic code
+executes them. The planner gets web search plus a small tool set
+that mirrors the protocol: `create_session`, `search_web`,
+`find_provable_price`, `find_price`, `prove`, `store_proof`,
+`open_conversation`, `prove_quote`, `barter`, `post_event`,
+`finish`. Proofs are handled by short ids, never pasted into the
+model context. Prices and proofs only ever move through tool
+results, and the run ends at an approval question. Nothing is
+bought.
+
+`find_provable_price` is the source-call hunt: a tiny Spark
+transformation agent proposes the lean API call that sourced a
+retailer price (a Shopify product JSON, for example), code
+fetches and scores candidates for name, quantity, and price, and
+the HTML page itself is the fallback when no lean call survives.
+TLSNotary proves small API responses far better than full pages,
+so this is the step that makes proving practical. Debug it with
+`node run.mjs "<product>" --hunt <product page URL>` and an
+optional `--expect <price>`.

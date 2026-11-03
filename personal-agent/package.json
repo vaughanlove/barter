@@ -12,5 +12,10 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@tanstack/ai": "^1.0.1",
+    "@tanstack/ai-openai": "^1.0.1",
+    "zod": "^4.6.7"
   }
 }
