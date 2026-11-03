@@ -593,11 +593,11 @@ proofs, the verification, and the negotiation are real.</p>
 <div class="ladder">
 <h2>What the protocol makes possible</h2>
 <ol class="lsteps">
-<li class="lstep"><span class="lname">Your agent finds a price online<span class="lsub">A true search for the real product. The proof it generates is real, and anyone can validate it.</span></span><span class="lbar" style="width:142px"></span><span class="lprice">$17.19</span></li>
+<li class="lstep"><span class="lname">Your agent finds a price online<span class="lsub">A true search for the real product. The proof it generates is real, and anyone can validate it.</span></span><span class="lbar" style="width:142px"></span><span class="lprice">$2.50</span></li>
 <li class="lstep"><span class="lname"><svg class="licon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#C70000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>Proof generated: a provable presentation of that price</span><span class="lnote">TLSNotary presentation</span></li>
 <li class="lstep loopstep"><span class="lname">Vendors stocking the product verify the proof</span><span class="lnote">TLSNotary verification</span><span class="looparrow" aria-hidden="true">&#8597;</span></li>
 <li class="lstep loopstep"><span class="lname">Multiple rounds of counter-offers, each backed by its own proof</span><span class="lprice">&darr; lower each round</span></li>
-<li class="lstep best"><span class="lname"><svg class="licon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#C70000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Best price locked, awaiting your approval</span><span class="lbar" style="width:130px"></span><span class="lprice">$15.67</span></li>
+<li class="lstep best"><span class="lname"><svg class="licon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#C70000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Best price locked, awaiting your approval</span><span class="lbar" style="width:130px"></span><span class="lprice">$2.28</span></li>
 </ol>
 <p class="lcap">Prices from a real run. The vendors are any company agents; the proof is what lets strangers negotiate without trusting each other&rsquo;s claims. <a href="/s/${REFERENCE_SESSION}">See this run</a></p>
 <a class="howbtn" href="/how-it-works">How it works</a>
