@@ -35,7 +35,10 @@ export default defineRailway(() => {
       LANDING_SIDECAR_URL: PROVE,
       BARTER_DB_PATH: "/data/barter.db",
       // JEV price classifier key. Set once in Railway; IaC keeps it.
+      // Via the Cloudflare egress proxy like the vendors: the value is
+      // the proxy token, not the real Meta key (see egress-proxy/).
       MODEL_API_KEY: preserve(),
+      META_API_BASE_URL: "https://barter-meta-egress.vaughanelove.workers.dev/v1",
     },
   });
 
