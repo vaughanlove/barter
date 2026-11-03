@@ -616,7 +616,7 @@ proofs, the verification, and the negotiation are real.</p>
 (function rotate() {
   const el = document.getElementById('rotator');
   if (!el) return;
-  const words = ['carpe deodorant', 'a box of white cheddar annies', 'a case of Moretti'];
+  const words = ['carpe deodorant', "white cheddar Annie's", 'a case of Moretti'];
   const chars = 'abcdefghijklmnopqrstuvwxyz';
   let wi = 0;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
