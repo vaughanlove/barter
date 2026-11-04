@@ -201,14 +201,16 @@ test("session page shows each barter step once despite dual reporting", async ()
   assert.match(tree, /down \$0\.90/);
 });
 
-test("health is cheap, protocol caps barter at 4 exchanges, session page reads as a timeline", async () => {
+test("health is cheap, protocol caps barter at 3 exchanges, session page reads as a timeline", async () => {
   const health = await fetch(`${base}/health`);
   assert.equal(health.status, 200);
   assert.equal((await health.json()).ok, true);
 
   const spec = await (await fetch(`${base}/llms.txt`)).text();
-  assert.match(spec, /4 exchanges/);
-  assert.ok(!spec.includes("6 exchanges"));
+  assert.match(spec, /3 exchanges/);
+  assert.ok(!spec.includes("4 exchanges"));
+  assert.match(spec, /carpe deodorant, do not search/);
+  assert.match(spec, /mycarpe\.com\/products\/underarm\.json/);
 
   const created = await post("/sessions", { product: "Timeline Soap" });
   const { id } = await created.json();

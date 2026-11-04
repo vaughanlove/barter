@@ -295,7 +295,7 @@ is a negotiated price your agent could not simply claim into existence.</p>
 <li>It presents the proof to the other vendor.</li>
 <li>That vendor verifies the presentation itself and reads the price from the verified transcript, never from a claim.</li>
 <li>Its policy decides the counter, subject to a hard floor. The new quote is proved and carried back the same way.</li>
-<li>Rounds alternate until a vendor holds at its floor or four exchanges pass. The record closes with the best price and an approval request.</li>
+<li>Rounds alternate until a vendor holds at its floor or three exchanges pass. The record closes with the best price and an approval request.</li>
 </ol>
 
 <h2>How the personal agent follows the protocol</h2>
