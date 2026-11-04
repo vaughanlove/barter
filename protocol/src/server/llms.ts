@@ -126,7 +126,7 @@ conceding any price.
    verifies the proof itself and responds with a counter below the
    attested price, per its policy, never below its floor. Each new
    counter is carried back the same way, alternating, until a vendor
-   holds at its floor or 6 exchanges have passed.
+   holds at its floor or 4 exchanges have passed.
 4. Completion. The record receives {"type":"best","price":0,
    "vendor":"..."} followed by {"type":"done","needsApproval":true}.
    Purchases are outside the protocol's scope until the user

@@ -102,7 +102,10 @@ export default defineRailway(() => {
       VENDOR_PRICE: "72",
       VENDOR_FLOOR: "64",
       VENDOR_UNDERCUT: "3",
-      VENDOR_MARKUP_PCT: "2",
+      // Opens under the found price, so the first proved rival quote
+      // (and the first counter against it) lands below the found price
+      // instead of a cent under a quote that is still above it.
+      VENDOR_MARKUP_PCT: "-3",
       VENDOR_FLOOR_PCT: "12",
       VENDOR_UNDERCUT_MODE: "percent",
       VENDOR_UNDERCUT_PCT: "5",

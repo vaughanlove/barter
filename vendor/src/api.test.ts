@@ -151,6 +151,18 @@ describe("bartering tactics", () => {
     expect(typeof business.why).toBe("string");
   });
 
+  it("opens below the found price when seeded with a negative markup", async () => {
+    process.env.VENDOR_MARKUP_PCT = "-3";
+    process.env.VENDOR_FLOOR_PCT = "12";
+    const created = await postJson("/poppy/conversations", {
+      product: "Seeded Soap",
+      presentationB64: "price-20",
+    });
+    const quote = (created.body as { quote: { price: number } }).quote;
+    expect(quote.price).toBe(19.4);
+    expect(quote.price).toBeLessThan(20);
+  });
+
   it("records why a counter was made and which decision path made it", async () => {
     process.env.VENDOR_MARKUP_PCT = "5";
     process.env.VENDOR_FLOOR_PCT = "8";

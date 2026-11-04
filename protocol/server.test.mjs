@@ -201,6 +201,41 @@ test("session page shows each barter step once despite dual reporting", async ()
   assert.match(tree, /down \$0\.90/);
 });
 
+test("health is cheap, protocol caps barter at 4 exchanges, session page reads as a timeline", async () => {
+  const health = await fetch(`${base}/health`);
+  assert.equal(health.status, 200);
+  assert.equal((await health.json()).ok, true);
+
+  const spec = await (await fetch(`${base}/llms.txt`)).text();
+  assert.match(spec, /4 exchanges/);
+  assert.ok(!spec.includes("6 exchanges"));
+
+  const created = await post("/sessions", { product: "Timeline Soap" });
+  const { id } = await created.json();
+  const ev = (type, body = {}) => post(`/sessions/${id}/events`, { type, ...body });
+  await post(`/sessions/${id}/proofs`, {
+    presentationB64: "aGVsbG8td29ybGQ=",
+    host: "mycarpe.com",
+    attestedPrice: 19.95,
+  });
+  // The same anchor proof reported twice (agent copy + stored-proof copy).
+  await ev("proof", { host: "mycarpe.com", attestedPrice: 19.95, hash: "aaa111" });
+  await ev("proof", { vendor: "mycarpe.com", host: "mycarpe.com", attestedPrice: 19.95, price: 19.95 });
+  await ev("quote", { vendor: "Basecamp Supply", price: 20.95 });
+  await ev("quote", { vendor: "Ridgeline Outfitters", price: 20.35 });
+  await ev("proof", { host: "ridgeline.barter.computer", attestedPrice: 20.35, hash: "bbb222" });
+  await ev("barter", { vendor: "Basecamp Supply", price: 20.34 });
+  await ev("vendor.offer.countered", { vendor: "Basecamp Supply", price: 20.34, attestedPrice: 20.35 });
+
+  const html = await (await fetch(`${base}/s/${id}`)).text();
+  const rows = (t) => (html.match(new RegExp(`<div class="trow" data-type="${t}"`, "g")) ?? []).length;
+  assert.equal(rows("proof"), 2, "duplicate anchor proof rows merge into one");
+  assert.match(html, /Proof generated/);
+  assert.match(html, /Proof submitted to Basecamp Supply/);
+  assert.match(html, /Barter round 1/);
+  assert.match(html, /Price path/);
+});
+
 test("session actions can be inspected with the vendor decision trace", async () => {
   const created = await post("/sessions", { product: "Trace Beans" });
   const { id } = await created.json();

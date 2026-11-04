@@ -26,7 +26,7 @@ Personal agents face a different problem. ChatGPT found that their implementatio
 
 This is what the barter.computer protocol aims to solve. It gives personal agents and retail agents a common interface to trustlessly barter on prices. A personal agent goes and sources a product, barters with retail agents and produces a price lower than the best found publically available price. Now this deal exists for this agentic session, not publically. A user goes and buys that product through their agent.   
 
-The protocol here demonstrates this agentic bartering concept on retail products because of the simplicity of finding online pricing. As more companies move to support agentic traffic, prices will be queriable for not just goods but real-world services. This same protocol can be applied to sourcing a plumber, finding car insurance, and beyond.   
+The protocol here demonstrates this agentic bartering concept on retail products because of the simplicity of finding online pricing. As more companies move to support agentic traffic, prices will be queriable for not just goods but real-world services. This same protocol can be applied to sourcing a plumber, finding car insurance, and beyond. I think that this style of agentic barter will proliferate quickly once one big vendor implements an agent that accepts barter and consequently drives significant volume through agentic transactions.
 
 
 ## Features

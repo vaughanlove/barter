@@ -295,7 +295,7 @@ is a negotiated price your agent could not simply claim into existence.</p>
 <li>It presents the proof to the other vendor.</li>
 <li>That vendor verifies the presentation itself and reads the price from the verified transcript, never from a claim.</li>
 <li>Its policy decides the counter, subject to a hard floor. The new quote is proved and carried back the same way.</li>
-<li>Rounds alternate until a vendor holds at its floor or six exchanges pass. The record closes with the best price and an approval request.</li>
+<li>Rounds alternate until a vendor holds at its floor or four exchanges pass. The record closes with the best price and an approval request.</li>
 </ol>
 
 <h2>How the personal agent follows the protocol</h2>
@@ -317,7 +317,7 @@ build on its own domain, with its own discovery document, written negotiation
 policy, opening markup, and discount ceiling.</p>
 <ol class="steps">
 <li><a href="https://basecamp.barter.computer">Basecamp Supply</a>: lean stock on a two-week restock cycle. Opens at the proven price plus 5%, can discount up to 8%, moves a cent at a time, and spends a small promo pool slowly.</li>
-<li><a href="https://ridgeline.barter.computer">Ridgeline Outfitters</a>: deep stock on a four-week restock cycle. Opens at plus 2%, can discount up to 12%, and moves in bold steps to win the sale before the next reload lands.</li>
+<li><a href="https://ridgeline.barter.computer">Ridgeline Outfitters</a>: deep stock on a four-week restock cycle. Opens 3% under the proven price, can discount up to 12%, and moves in bold steps to win the sale before the next reload lands.</li>
 </ol>
 <p>For each counter, Muse Spark may propose a price in the company's written
 style, weighing stock cover, restock timing, discount already used, and promo
@@ -385,7 +385,7 @@ function describeEvent(e: Ev): string {
   const price = typeof e.price === "number" ? `$${e.price}` : "its price";
   const attested = typeof e.attestedPrice === "number" ? `$${e.attestedPrice}` : "a lower price";
   if (type === "quote") return `${who} quoted ${price}.`;
-  if (type === "proof") return `A TLSNotary proof was stored when it was presented, attesting ${attested}${e.host ? ` from ${e.host}` : ""}.`;
+  if (type === "proof") return `Proof generated: a TLSNotary proof attesting ${attested}${e.host ? ` from ${e.host}` : ""}.`;
   if (type === "barter") return `The personal agent presented a verified proof to ${who}${typeof e.price === "number" ? `, and the recorded result was ${price}` : ""}.`;
   if (type === "vendor.quote.issued") return `${who} issued a quote at ${price}.`;
   if (type === "vendor.offer.countered") return `${who} countered at ${price} after checking a verified ${attested} offer.`;
@@ -448,11 +448,53 @@ function decisionSummaryHtml(rec: SessionRec): string {
   return `<p class="receipt-note">Vendor decisions in this receipt: ${sparkText}${fallbackText}</p>`;
 }
 
-function treeRowsHtml(rec: SessionRec): { rows: string; lastPrice: number | null; count: number } {
+const ROW_LABELS: Record<string, string> = {
+  proof: "PROOF MADE",
+  barter: "PROOF SENT",
+  quote: "QUOTE",
+  "vendor.quote.issued": "QUOTE",
+  "vendor.offer.countered": "COUNTER",
+  "vendor.offer.floor": "FLOOR",
+  "vendor.offer.held": "HELD",
+  "vendor.proof.rejected": "REJECTED",
+  best: "BEST",
+  done: "DONE",
+};
+
+function rowSentence(e: Ev): string {
+  const type = String(e.type ?? "event");
+  if (type === "barter") {
+    const who = (e.vendor as string) ?? (e.provider as string) ?? "the vendor";
+    return `Proof submitted to ${who}${typeof e.price === "number" ? `: it countered at $${e.price}` : ""}.`;
+  }
+  return describeEvent(e);
+}
+
+function pricePathHtml(events: Ev[]): string {
+  const steps: string[] = [];
+  for (const e of events) {
+    const type = String(e.type ?? "event");
+    if (type === "proof" && typeof e.attestedPrice === "number" && !steps.length) {
+      steps.push(`$${e.attestedPrice} found${e.host ? ` at ${e.host}` : ""}`);
+    } else if (
+      ["quote", "vendor.offer.countered", "vendor.offer.floor", "vendor.offer.held"].includes(type) &&
+      typeof e.price === "number"
+    ) {
+      steps.push(`$${e.price} ${((e.vendor as string) ?? (e.provider as string) ?? "").split(" ")[0]}`.trim());
+    }
+  }
+  if (steps.length < 2) return "";
+  const chips = steps.map((s) => `<span class="ppchip">${esc(s)}</span>`).join('<span class="pparrow">&rarr;</span>');
+  return `<div class="pricepath"><span class="pplabel">Price path</span>${chips}</div>`;
+}
+
+function treeRowsHtml(rec: SessionRec): { rows: string; pricePath: string; lastPrice: number | null; count: number } {
   const events = listEvents(rec.id) as Ev[];
   const proofs = listProofs(rec.id);
   let lastPrice: number | null = null;
   let lastKey = "";
+  let barterRound = 0;
+  const seenProofs = new Set<string>();
   const agentQuotePrices = new Set(
     events.filter((e) => e.type === "quote" && typeof e.price === "number").map((e) => e.price),
   );
@@ -473,6 +515,13 @@ function treeRowsHtml(rec: SessionRec): { rows: string; lastPrice: number | null
     const key = `${eventCall(e)}|${e.price ?? ""}|${e.attestedPrice ?? ""}`;
     if (key === lastKey) return "";
     lastKey = key;
+    // The same proof is reported as an agent proof event and again as a
+    // stored-proof copy with different fields. One row per proof.
+    if (type === "proof") {
+      const sig = `${e.host ?? ""}|${e.attestedPrice ?? ""}`;
+      if (seenProofs.has(sig)) return "";
+      seenProofs.add(sig);
+    }
     const mv = movementOf(e, lastPrice);
     if (mv.price !== null) lastPrice = mv.price;
     const verdict =
@@ -482,9 +531,11 @@ function treeRowsHtml(rec: SessionRec): { rows: string; lastPrice: number | null
     const detail = eventDetailLines(e, proofs).map((line) => esc(line)).join("<br>");
     const sparkTag =
       e.model || String(e.source ?? "").startsWith("Muse Spark") ? `<span class="ttag spark">SPARK</span>` : "";
-    return `<div class="trow" data-type="${esc(type)}" data-price="${e.price ?? ""}" tabindex="0" role="button" aria-expanded="false" title="Inspect this action"><span class="ttag">${esc(type.split(".")[0].toUpperCase())}</span><span class="tcall">${esc(eventCall(e))}</span>${sparkTag}${verdict ? `<span class="ttag verdict">${esc(verdict)}</span>` : ""}<span class="tmove ${mv.cls}">${mv.price !== null ? esc(mv.tag) : ""}</span></div><div class="tdetail" hidden>${detail}</div>`;
+    const heading = type === "barter" ? `<div class="tround">Barter round ${++barterRound}</div>` : "";
+    const label = ROW_LABELS[type] ?? type.split(".")[0].toUpperCase();
+    return `${heading}<div class="trow" data-type="${esc(type)}" data-price="${e.price ?? ""}" data-attested="${e.attestedPrice ?? ""}" tabindex="0" role="button" aria-expanded="false" title="Inspect this action"><span class="ttag">${esc(label)}</span><span class="tcall">${esc(rowSentence(e))}</span>${sparkTag}${verdict ? `<span class="ttag verdict">${esc(verdict)}</span>` : ""}<span class="tmove ${mv.cls}">${mv.price !== null ? esc(mv.tag) : ""}</span></div><div class="tdetail" hidden>${detail}</div>`;
   });
-  return { rows: rows.join(""), lastPrice, count: rows.filter(Boolean).length };
+  return { rows: rows.join(""), pricePath: pricePathHtml(events), lastPrice, count: rows.filter(Boolean).length };
 }
 
 export const sessionPage = (rec: SessionRec, _base: string): string => {
@@ -496,13 +547,18 @@ export const sessionPage = (rec: SessionRec, _base: string): string => {
   .tree{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;border:1.5px solid #1c1c1a;background:#fff;margin:22px 0}
   .troot{display:flex;gap:8px;align-items:center;padding:7px 10px;border-bottom:1.5px solid #1c1c1a;background:#1c1c1a;color:#fbfaf7}
   .tchildren{margin-left:14px;border-left:1px solid #d8d5c9;padding:4px 0 6px}
-  .trow{display:flex;gap:8px;align-items:center;padding:2.5px 10px;line-height:1.45;white-space:nowrap;overflow-x:auto}
+  .pricepath{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:16px 0 4px;font-size:13.5px}
+  .pplabel{font-weight:700;margin-right:2px}
+  .ppchip{border:1px solid #1c1c1a;padding:2px 8px;background:#fff}
+  .pparrow{color:#C70000;font-weight:700}
+  .tround{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.08em;font-weight:700;color:#C70000;padding:10px 10px 2px}
+  .trow{display:flex;gap:8px;align-items:center;padding:4px 10px;line-height:1.5}
   .trow:hover{background:#f4f2ea}
   .ttag{font-size:10px;letter-spacing:.06em;border:1px solid #1c1c1a;padding:0 5px;flex:none}
   .ttag.verdict{background:#1c1c1a;color:#fbfaf7}
   .ttag.spark{color:#C70000;border-color:#C70000;font-weight:700}
   .receipt-note{font-size:13.5px;line-height:1.55;color:#55534c;border:1px solid #d8d5c9;padding:9px 12px;margin:14px 0}
-  .tcall{overflow:hidden;text-overflow:ellipsis}
+  .tcall{font-family:Gelasio,Georgia,'Times New Roman',serif;font-size:14.5px}
   .tmove{margin-left:auto;flex:none;font-size:11px}
   .tmove.down{color:#137333}.tmove.up{color:#b3261e}.tmove.flat{color:#6b6b66}
   .trow[role="button"]{cursor:pointer}
@@ -517,12 +573,15 @@ export const sessionPage = (rec: SessionRec, _base: string): string => {
     .ttag{border-color:#ecece7}
     .ttag.verdict{background:#ecece7;color:#131313}
     .receipt-note{color:#a9a9a1;border-color:#3a3a34}
+    .ppchip{background:#1d1d1a;border-color:#ecece7}
+    .tround{color:#ff5147}
   }
 </style>
 <h1>${esc(rec.product || "Your barter")}</h1>
 <p class="lede">Session ${rec.id} · <span id="statusText">${esc(rec.status)}</span>${rec.budget != null ? ` · budget $${rec.budget}` : ""}${rec.keyphrase ? ` · keyphrase <code>${esc(rec.keyphrase)}</code>` : ""}</p>
 <div id="bestSlot">${rec.best_price != null ? `<div class="best"><div>Best offer${rec.best_vendor ? ` from ${esc(rec.best_vendor)}` : ""}</div><div class="price">$${rec.best_price}</div></div>` : ""}</div>
 ${decisionSummaryHtml(rec)}
+${tree.pricePath}
 <div class="tree">
 <div class="troot"><span class="ttag">SESSION</span><span class="tcall">session(product="${esc(rec.product)}", status="<span id="rootStatus">${esc(rec.status)}</span>")</span><span class="tmove flat" id="callCount">${tree.count} calls</span></div>
 <div class="tchildren" id="tchildren">${tree.rows || `<div class="trow"><span class="tcall">waiting for the agent to start</span></div>`}</div>
@@ -538,7 +597,7 @@ function detailLines(d){
   if (d.t) lines.push('When: ' + d.t);
   lines.push('Actor: ' + (type.startsWith('vendor.') ? who : 'Personal agent or session record'));
   if (type === 'vendor.offer.countered') lines.push('What happened: ' + who + ' countered at $' + d.price + ' after checking a verified $' + d.attestedPrice + ' offer.');
-  else if (type === 'proof') lines.push('What happened: A TLSNotary proof was stored when it was presented' + (d.host ? ' from ' + d.host : '') + '.');
+  else if (type === 'proof') lines.push('What happened: Proof generated: a TLSNotary proof attesting $' + d.attestedPrice + (d.host ? ' from ' + d.host : '') + '.');
   else lines.push('What happened: ' + type + ' was recorded.');
   if (d.reason) lines.push('Decision note: ' + d.reason);
   if (d.note) lines.push('Vendor note: ' + d.note);
@@ -577,9 +636,32 @@ treeEl.addEventListener('keydown', e => {
   const row = e.target.closest('.trow[data-type]');
   if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleRow(row); }
 });
+const ROW_LABELS = { proof: 'PROOF MADE', barter: 'PROOF SENT', quote: 'QUOTE', 'vendor.quote.issued': 'QUOTE', 'vendor.offer.countered': 'COUNTER', 'vendor.offer.floor': 'FLOOR', 'vendor.offer.held': 'HELD', 'vendor.proof.rejected': 'REJECTED', best: 'BEST', done: 'DONE' };
+let barterRound = treeEl.querySelectorAll('.tround').length;
+function rowSentence(d){
+  const t = String(d.type || 'event');
+  const who = d.vendor || d.provider || 'The vendor';
+  const price = typeof d.price === 'number' ? '$' + d.price : 'its price';
+  const attested = typeof d.attestedPrice === 'number' ? '$' + d.attestedPrice : 'a lower price';
+  if (t === 'proof') return 'Proof generated: a TLSNotary proof attesting ' + attested + (d.host ? ' from ' + d.host : '') + '.';
+  if (t === 'barter') return 'Proof submitted to ' + who + (typeof d.price === 'number' ? ': it countered at ' + price : '') + '.';
+  if (t === 'quote') return who + ' quoted ' + price + '.';
+  if (t === 'vendor.offer.countered') return who + ' countered at ' + price + ' after checking a verified ' + attested + ' offer.';
+  if (t === 'vendor.offer.floor') return who + ' reached its bottom line at ' + price + ' after checking a verified ' + attested + ' offer.';
+  if (t === 'vendor.offer.held') return who + ' held at ' + price + ' after checking a verified ' + attested + ' offer.';
+  if (t === 'vendor.proof.rejected') return who + ' rejected the proof and kept its price at ' + price + '.';
+  if (t === 'best') return who + ' had the best recorded offer at ' + price + '.';
+  if (t === 'done') return 'The run ended and waited for approval. Nothing was bought.';
+  return t + ' was recorded.';
+}
 function appendRow(d){
   const rawType = String(d.type || 'event');
   if (rawType === 'vendor.proof.received' || rawType === 'vendor.conversation.created' || rawType === 'vendor.proof.verified') return;
+  if (rawType === 'proof') {
+    for (const old of treeEl.querySelectorAll('[data-type="proof"]')) {
+      if (old.dataset.attested === String(d.attestedPrice ?? '')) return;
+    }
+  }
   const price = typeof d.price === 'number' ? d.price : null;
   if (rawType === 'vendor.quote.issued' && price !== null) {
     for (const old of treeEl.querySelectorAll('[data-type="quote"]')) {
@@ -615,7 +697,14 @@ function appendRow(d){
   div.setAttribute('aria-expanded', 'false');
   div.title = 'Inspect this action';
   const sparkTag = (d.model || String(d.source || '').startsWith('Muse Spark')) ? '<span class="ttag spark">SPARK</span>' : '';
-  div.innerHTML = '<span class="ttag">' + escHtml(type.split('.')[0].toUpperCase()) + '</span><span class="tcall">' + escHtml(type.replace(/^(vendor|muse|notary)\\./,'') + '(' + args.join(', ') + ')') + '</span>' + sparkTag + '<span class="tmove ' + cls + '">' + escHtml(mv) + '</span>';
+  if (rawType === 'barter') {
+    const h = document.createElement('div');
+    h.className = 'tround';
+    h.textContent = 'Barter round ' + (++barterRound);
+    treeEl.appendChild(h);
+  }
+  div.dataset.attested = d.attestedPrice ?? '';
+  div.innerHTML = '<span class="ttag">' + escHtml(ROW_LABELS[rawType] || type.split('.')[0].toUpperCase()) + '</span><span class="tcall">' + escHtml(rowSentence(d)) + '</span>' + sparkTag + '<span class="tmove ' + cls + '">' + escHtml(mv) + '</span>';
   treeEl.appendChild(div);
   treeEl.appendChild(detailElement(d));
   const cc = document.getElementById('callCount');
