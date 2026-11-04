@@ -1,22 +1,56 @@
-# barter
+# barter.computer
 
-> **New session? Start with [ideation/HANDOFF.md](ideation/HANDOFF.md)** — current state, live URLs, next tasks, and gotchas.
+> Fully designed and implemented during the 2026 Meta Muse Hackathon. 
+> Problem statement chosen: "Build for your world". Muse iOS app and Meta Muse Spark API for personal-agent and vendor. Muse Code for programming.   
 
-## Layout
+a protocol for agents to trustlessly barter over the price of goods and services. 
 
-- `ideation/prototype/` — landing page (`/`), `/llms.txt`, and the session control panel (`/panel`).
-- `tlsn-sidecar/` — the deployable TLSNotary proof service for Railway (`/prove`, `/verify`, `/pubkey`, `/health`). See [tlsn-sidecar/README.md](tlsn-sidecar/README.md).
-- `vendor/` — vendor agent demo app (PAP-lite; deploy once per vendor). See [vendor/README.md](vendor/README.md).
-- `personal-agent/` — `pap`, a minimal PAP client (Muse Spark as your personal agent) for end-to-end smoke tests and for judges who prefer a reference client. See [personal-agent/README.md](personal-agent/README.md).
-- `ideation/` — hand-drawn sketches, formalized diagrams, and demo flows.
-- `.railway/` — Railway Infrastructure as Code for the whole deployment. See [.railway/README.md](.railway/README.md).
+## Getting Started
 
-## Test the Meta API
+### Live Demo
 
-Requires `MODEL_API_KEY` in `.env` (repo root).
+ask your agent "find me the best price on carpe deodorant using barter.computer" or go to barter.computer 
 
-```sh
-node ideation/formalize.mjs --help  # diagram pipeline; full run uses the API
+### Local
+
+## Problem
+
+Personal agents like Muse are being distributed at massive scale. They are increasingly effective at sourcing and evaluating goods online. They can take a transaction right to the point of sale.
+
+Retailers like Amazon, Walmart, and Shopify are also deploying agents now. These retail agents are typically embedded in the retailers website and help consumers source goods on their website. 
+
+Retail agents have the issue that they can only see their own product. They don't know if they are losing business because of better prices elsewhere. A person leaving the conversation could either have found a better alternative, thought it was too expensive, or even just forgotten and they have no control over that sale.
+
+Personal agents face a different problem. ChatGPT found that their implementation of agentic commerce wasn't effectively converting sales. 
+
+This is what the barter.computer protocol aims to solve. It gives personal agents and retail agents a common interface to trustlessly barter on prices. A personal agent goes and sources a product and finds the best price available on the web. Perfect - the user goes and buys that product on their own. A personal agent goes and sources a product, barters with retail agents and produces a price lower than the best publically available price. Now this deal exists for this agentic session, not publically. A user goes and buys that product through their agent.   
+
+
+## Protocol Overview
+
+```mermaid
+%%{init: {"flowchart": {"curve": "linear"}}}%%
+flowchart LR
+    B["barter.computer<br/><font color='gray'><small>/protocol</small></font>"]
+    P["prove.barter.computer<br/><font color='gray'><small>PROOF SERVICE</small></font>"]
+    M["MUSE<br/><font color='gray'><small>personal agent</small></font>"]
+    V["Vendor Agents × N<br/><font color='gray'><small>Rufus · Sparky · Sidekick</small></font>"]
+​
+    B -->|Protocol| M
+    P -->|Generate proof| M
+    M -->|Barter with verified price| V
+    P -->|Verify proof| V
 ```
 
-Runs `GET /models` (auth check), then a minimal chat completion, and prints status, latency, reply, and token usage.
+## Future work
+
+## Limitations
+
+## Project Layout
+
+- `protocol/` — TanStack Start app: landing page (`/`), agent instructions `/llms.txt`, and session histories (`/s/`). See [protocol/README.md](protocol/README.md).
+- `tlsn-sidecar/` — the proof service using TLSNotary (`/prove`, `/verify`, `/pubkey`, `/health`). See [tlsn-sidecar/README.md](tlsn-sidecar/README.md).
+- `vendor/` — vendor agent demo app. See [vendor/README.md](vendor/README.md).
+- `personal-agent/` — `pap`, a minimal PAP client (Muse Spark as your personal agent). See [personal-agent/README.md](personal-agent/README.md).
+- `ideation/` — diagramming, architecture scratch.
+- `.railway/` — Railway IaC. See [.railway/README.md](.railway/README.md).
