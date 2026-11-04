@@ -17,8 +17,8 @@ export const esc = (s: unknown): string =>
   );
 
 export const STYLE = `
-  body{font-family:Gelasio,Georgia,'Times New Roman',serif;max-width:680px;margin:56px auto;padding:0 20px;color:#1c1c1a;background:#ffffff}
-  h1{font-size:40px;margin:0 0 10px;line-height:1.15;font-weight:700}
+  body{font-family:Gelasio,Georgia,'Times New Roman',serif;max-width:680px;margin:76px auto;padding:0 20px;color:#1c1c1a;background:#ffffff}
+  h1{font-size:40px;margin:0 0 16px;line-height:1.15;font-weight:700}
   .lede{font-size:17px;line-height:1.55;color:#3d3d38}
   .say{background:#fff;border:1.5px solid #1c1c1a;padding:16px 18px;font-size:16.5px;line-height:1.5;margin:22px 0}
   label{display:block;font-size:13px;letter-spacing:.03em;margin:16px 0 6px;color:#6b6b66}
@@ -34,7 +34,7 @@ export const STYLE = `
   .best .price{font-size:32px}
   .badge{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;border:1px solid #1c1c1a;padding:1px 6px}
   li{margin:6px 0;line-height:1.5}
-  .cardwrap{position:relative;margin:38px 0 34px}
+  .cardwrap{position:relative;margin:58px 0 54px}
   .grules{display:flex;flex-direction:column;gap:3px}
   .grules i{display:block;height:1px;background:#1c1c1a}
   .kicker{color:#C70000;font-weight:700;font-size:17px;padding-top:12px}
@@ -48,7 +48,7 @@ export const STYLE = `
   .copybtn{flex:none;margin:0;background:#1c1c1a;color:#ffffff;border:1px solid #1c1c1a;box-shadow:3px 3px 0 #1c1c1a;font-size:14px;padding:9px 16px;cursor:pointer}
   .howbtn{display:inline-block;margin-top:14px;background:#1c1c1a;color:#ffffff;border:1px solid #1c1c1a;box-shadow:3px 3px 0 #1c1c1a;font-size:14px;line-height:16px;padding:9px 16px;text-decoration:none}
   .howbtn:hover{background:#C70000;border-color:#C70000}
-  .ladder{margin:42px 0 0;border-top:1.5px solid #1c1c1a;padding-top:14px}
+  .ladder{margin:66px 0 0;border-top:1.5px solid #1c1c1a;padding-top:18px}
   .ladder h2{font-size:21px;margin:0 0 6px}
   .ladder .lcap{font-size:14.5px;color:#6b6b66;line-height:1.5;margin:10px 0 0}
   .lsteps{list-style:none;margin:14px 0 0;padding:0}
@@ -77,8 +77,8 @@ export const STYLE = `
   .plock{display:flex;gap:14px;align-items:center;margin-top:14px;border:1.5px solid #1c1c1a;padding:12px 14px}
   .plock strong{font-size:17px;color:#C70000}
   @media (max-width: 640px){ .pflow{flex-direction:column} .parrow{transform:rotate(90deg)} }
-  .faq{margin-top:46px;border-top:1.5px solid #1c1c1a;padding-top:8px}
-  .vendors{margin-top:34px;padding-top:14px;border-top:1px solid #d8d5c9;font-size:12.5px;color:#8a877c}
+  .faq{margin-top:74px;border-top:1.5px solid #1c1c1a;padding-top:12px}
+  .vendors{margin-top:54px;padding-top:18px;border-top:1px solid #d8d5c9;font-size:12.5px;color:#8a877c}
   .vendors a{color:#6b6b66;text-underline-offset:3px}
   .vendors a:hover{color:#1c1c1a}
   .faq h2{font-size:21px;margin:14px 0 6px}
@@ -156,12 +156,13 @@ export const landingPage = (base: string, _missing = false): string => {
 <title>Barter</title><style>${STYLE}</style>
 <h1>Ask your agent to barter for you.</h1>
 <p class="lede">Bring your own agent. Point it at barter.computer and it learns
-a protocol for turning a price it finds anywhere online into a
-verifiable proof, then uses that proof to barter with vendors.
-No app to install and no price taken on faith: vendors only move
-on prices they can verify themselves with
-<a href="https://github.com/tlsnotary/tlsn">TLSNotary</a>. In this
-demo the companies are simulated. The real product search, the
+a protocol for turning a price into a verifiable proof, then uses
+that proof to barter with vendors selling the same product.
+No app to install and prices sourced directly from a real vendor.
+Bartering vendor agents can verify the proof and competing price
+are real with
+<a href="https://github.com/tlsnotary/tlsn">TLSNotary</a>. In the
+demo the companies are simulated. The product search, the
 proofs, the verification, and the negotiation are real.</p>
 <div class="cardwrap">
 <div class="grules"><i></i><i></i><i></i><i></i></div>
