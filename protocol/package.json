@@ -1,0 +1,31 @@
+{
+  "name": "barter-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "start": "srvx --prod -s ../client dist/server/server.js",
+    "test": "vite build && node --test server.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "^1.170.46",
+    "@tanstack/react-start": "^1.169.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "srvx": "^0.11.21"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.2.1",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.5"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

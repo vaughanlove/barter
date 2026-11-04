@@ -4,7 +4,7 @@ The whole demo deployment is defined in [railway.ts](railway.ts):
 
 | Service | Domain | Source |
 |---|---|---|
-| `landing` | barter.computer | `ideation/prototype/` (landing, `/llms.txt`, control panel) |
+| `landing` | barter.computer | `protocol/` — TanStack Start (landing, `/llms.txt`, control panel) |
 | `prove` | prove.barter.computer | `tlsn-sidecar/` (Dockerfile) |
 | `vendor-basecamp` | basecamp.barter.computer | `vendor/` — Basecamp Supply, $84 ask / $68 floor |
 | `vendor-ridgeline` | ridgeline.barter.computer | `vendor/` — Ridgeline Outfitters, $72 ask / $64 floor |

@@ -22,8 +22,11 @@ const VENDOR_B = "https://ridgeline.barter.computer";
 
 export default defineRailway(() => {
   const landing = service("landing", {
-    source: github(REPO, { rootDirectory: "ideation/prototype" }),
-    start: "node server.mjs",
+    // TanStack Start app (was ideation/prototype/server.mjs; parity
+    // port lives in protocol/, same SQLite volume and routes).
+    source: github(REPO, { rootDirectory: "protocol" }),
+    build: "pnpm build",
+    start: "pnpm start",
     healthcheck: "/panel",
     domains: ["barter.computer"],
     volumeMounts: {
