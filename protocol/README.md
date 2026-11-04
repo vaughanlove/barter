@@ -43,5 +43,5 @@ Environment: `PORT`, `BARTER_DB_PATH`, `LANDING_VENDOR_URL`,
 ## Deploy
 
 Railway service `landing`: root directory `protocol`, build
-`pnpm build`, start `pnpm start`, healthcheck `/panel`, volume
+`pnpm build`, start `pnpm start`, healthcheck `/health`, volume
 `/data`. See `.railway/railway.ts`.

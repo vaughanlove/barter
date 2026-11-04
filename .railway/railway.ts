@@ -27,7 +27,7 @@ export default defineRailway(() => {
     source: github(REPO, { rootDirectory: "protocol" }),
     build: "pnpm build",
     start: "pnpm start",
-    healthcheck: "/panel",
+    healthcheck: "/health",
     domains: ["barter.computer"],
     volumeMounts: {
       "/data": volume("landing-data", { sizeMB: 1024, region: "us-west2" }),

@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SplatRouteImport } from './routes/$'
 import { Route as FindPriceRouteImport } from './routes/find-price'
 import { Route as FollowRouteImport } from './routes/follow'
+import { Route as HealthRouteImport } from './routes/health'
 import { Route as HowItWorksRouteImport } from './routes/how-it-works'
 import { Route as PanelRouteImport } from './routes/panel'
 import { Route as SessionsRouteImport } from './routes/sessions'
@@ -45,6 +46,11 @@ const FindPriceRoute = FindPriceRouteImport.update({
 const FollowRoute = FollowRouteImport.update({
   id: '/follow',
   path: '/follow',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HealthRoute = HealthRouteImport.update({
+  id: '/health',
+  path: '/health',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HowItWorksRoute = HowItWorksRouteImport.update({
@@ -118,6 +124,7 @@ export interface FileRoutesByFullPath {
   '/$': typeof SplatRoute
   '/find-price': typeof FindPriceRoute
   '/follow': typeof FollowRoute
+  '/health': typeof HealthRoute
   '/how-it-works': typeof HowItWorksRoute
   '/panel': typeof PanelRouteWithChildren
   '/sessions': typeof SessionsRouteWithChildren
@@ -137,6 +144,7 @@ export interface FileRoutesByTo {
   '/$': typeof SplatRoute
   '/find-price': typeof FindPriceRoute
   '/follow': typeof FollowRoute
+  '/health': typeof HealthRoute
   '/how-it-works': typeof HowItWorksRoute
   '/panel': typeof PanelRouteWithChildren
   '/sessions': typeof SessionsRouteWithChildren
@@ -157,6 +165,7 @@ export interface FileRoutesById {
   '/$': typeof SplatRoute
   '/find-price': typeof FindPriceRoute
   '/follow': typeof FollowRoute
+  '/health': typeof HealthRoute
   '/how-it-works': typeof HowItWorksRoute
   '/panel': typeof PanelRouteWithChildren
   '/sessions': typeof SessionsRouteWithChildren
@@ -178,6 +187,7 @@ export interface FileRouteTypes {
     | '/$'
     | '/find-price'
     | '/follow'
+    | '/health'
     | '/how-it-works'
     | '/panel'
     | '/sessions'
@@ -197,6 +207,7 @@ export interface FileRouteTypes {
     | '/$'
     | '/find-price'
     | '/follow'
+    | '/health'
     | '/how-it-works'
     | '/panel'
     | '/sessions'
@@ -216,6 +227,7 @@ export interface FileRouteTypes {
     | '/$'
     | '/find-price'
     | '/follow'
+    | '/health'
     | '/how-it-works'
     | '/panel'
     | '/sessions'
@@ -236,6 +248,7 @@ export interface RootRouteChildren {
   SplatRoute: typeof SplatRoute
   FindPriceRoute: typeof FindPriceRoute
   FollowRoute: typeof FollowRoute
+  HealthRoute: typeof HealthRoute
   HowItWorksRoute: typeof HowItWorksRoute
   PanelRoute: typeof PanelRouteWithChildren
   SessionsRoute: typeof SessionsRouteWithChildren
@@ -274,6 +287,13 @@ declare module '@tanstack/react-router' {
       path: '/follow'
       fullPath: '/follow'
       preLoaderRoute: typeof FollowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/health': {
+      id: '/health'
+      path: '/health'
+      fullPath: '/health'
+      preLoaderRoute: typeof HealthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/how-it-works': {
@@ -403,6 +423,7 @@ const rootRouteChildren: RootRouteChildren = {
   SplatRoute: SplatRoute,
   FindPriceRoute: FindPriceRoute,
   FollowRoute: FollowRoute,
+  HealthRoute: HealthRoute,
   HowItWorksRoute: HowItWorksRoute,
   PanelRoute: PanelRouteWithChildren,
   SessionsRoute: SessionsRouteWithChildren,
