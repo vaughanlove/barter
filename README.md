@@ -28,19 +28,7 @@ This is what the barter.computer protocol aims to solve. It gives personal agent
 
 ## Protocol Overview
 
-```mermaid
-%%{init: {"flowchart": {"curve": "linear"}}}%%
-flowchart LR
-    B["barter.computer<br/><font color='gray'><small>/protocol</small></font>"]
-    P["prove.barter.computer<br/><font color='gray'><small>PROOF SERVICE</small></font>"]
-    M["MUSE<br/><font color='gray'><small>personal agent</small></font>"]
-    V["Vendor Agents × N<br/><font color='gray'><small>Rufus · Sparky · Sidekick</small></font>"]
-​
-    B -->|Protocol| M
-    P -->|Generate proof| M
-    M -->|Barter with verified price| V
-    P -->|Verify proof| V
-```
+![Protocol overview](ideation/formalized/highlevel-diag.svg)
 
 ## Future work
 
