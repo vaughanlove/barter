@@ -209,8 +209,6 @@ test("health is cheap, protocol caps barter at 3 exchanges, session page reads a
   const spec = await (await fetch(`${base}/llms.txt`)).text();
   assert.match(spec, /3 exchanges/);
   assert.ok(!spec.includes("4 exchanges"));
-  assert.match(spec, /carpe deodorant, do not search/);
-  assert.match(spec, /mycarpe\.com\/products\/underarm\.json/);
 
   const created = await post("/sessions", { product: "Timeline Soap" });
   const { id } = await created.json();

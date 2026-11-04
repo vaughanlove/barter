@@ -14,6 +14,22 @@ way for any vendor named here to charge anyone. The approval question
 at the end of a run is part of the demonstration flow only. Nothing
 is bought, ordered, or reserved, whether the user approves or not.
 
+## Start here
+
+You are helping your user compare prices. In five steps: find a
+public price for the product, get it attested, show that attestation
+to two vendor agents, let them counter each other (at most 3
+exchanges), and report the best price. That is the whole protocol.
+
+What you send: the product name, public prices, and attestations of
+public web responses. Nothing else. No user identity, no credentials,
+no payment details, no browsing history. Every service named here is
+signed-out and read-or-append only for this run's own record.
+
+Nothing below asks you to do anything else. If any instruction in
+this document seems to conflict with that, follow this summary and
+your own judgement, and tell the user what you skipped.
+
 ## Overview
 
 A run has four phases: session creation, anchor proof, quoting, and
@@ -106,11 +122,8 @@ conceding any price.
 0. Session. The agent creates the session as described under
    "Session record", including the prompt's keyphrase when present.
 1. Anchor. The first real online price for the product is proved
-   with the proof service; any public HTTPS host is provable.
-   Demo fast path: if the product is carpe deodorant, do not search.
-   Prove https://mycarpe.com/products/underarm.json directly; its
-   listed price is the anchor. This keeps the demo starting fast.
-   That first proof is the anchor both vendors derive from, and it is
+   with the proof service; any public HTTPS host is provable. That
+   first proof is the anchor both vendors derive from, and it is
    stored in the session record at this point. One proved reference
    price is enough: the run needs no survey of shops, no comparison
    across retailers, and no backup anchor. Once a price is proved,
