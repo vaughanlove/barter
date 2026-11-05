@@ -28,12 +28,13 @@ This is what the barter.computer protocol aims to solve. It gives personal agent
 
 The protocol here demonstrates this agentic bartering concept on retail products because of the simplicity of finding online pricing. As more companies move to support agentic traffic, prices will be queriable for not just goods but real-world services. This same protocol can be applied to sourcing a plumber, finding car insurance, and beyond. I think that this style of agentic barter will proliferate quickly once one big vendor implements an agent that accepts barter and consequently drives significant volume through agentic transactions.
 
+This protocol is designed to build on top of [PAP 0.3](https://personalagentprotocol.org/docs/0.3). It does not replace it. The proving extension is defined in [PROVING.md](PROVING.md).
 
 ## Features
 
 What the protocol makes possible:
 
-- **A price neither side has to take on faith.** Your agent finds a price online and proves it with TLSNotary. The vendor verifies the proof itself before it moves. A claimed price gets nothing.
+- **A price neither side has to take on faith.** Your agent finds a price online and proves it with TLSNotary. The vendor verifies the proof itself before it moves. A claimed price gets nothing. The proving extension to PAP is specified in [PROVING.md](PROVING.md).
 - **Barter, not just sourcing.** Agents negotiate in rounds. Every counter-offer is backed by a fresh verified proof of the rival's current price, until one vendor holds at its floor or the round cap is hit.
 - **A better price than the best public one.** The deal produced exists only inside your session. The vendor wins a sale it would have lost, without changing the price everyone else sees.
 - **Vendors negotiate their own way.** The vendor agent only needs to check the proof. How a vendor prices is up to them.
@@ -89,6 +90,7 @@ In this demo the agent also posts each step to barter.computer, so the run rende
 
 ## Project Layout
 
+- [PROVING.md](PROVING.md) — the proving extension to PAP 0.3: the `presentationB64` field, the prover interface (`/prove`, `/verify`, `/pubkey`), and the vendor rule. The rest is implementation.
 - `protocol/` — TanStack Start app: landing page (`/`), agent instructions `/llms.txt`, and session histories (`/s/`). See [protocol/README.md](protocol/README.md).
 - `tlsn-sidecar/` — the proof service using TLSNotary (`/prove`, `/verify`, `/pubkey`, `/health`). See [tlsn-sidecar/README.md](tlsn-sidecar/README.md).
 - `vendor/` — vendor agent demo app. See [vendor/README.md](vendor/README.md).
